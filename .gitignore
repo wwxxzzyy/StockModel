@@ -1,0 +1,35 @@
+# Environments
+.venv/
+venv/
+env/
+
+# Python cache & build
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Large data & model weights
+*.csv
+*.parquet
+*.h5
+*.pkl
+*.pt
+*.pth
+models/
+eval_results/
+eval_data/
+
+# IDE & OS
+.DS_Store
+.idea/
