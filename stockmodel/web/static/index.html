@@ -127,7 +127,14 @@
             <section id="panel-single-stock" class="tab-panel active" role="tabpanel">
                 <div class="panel-header">
                     <div>
-                        <h1 class="panel-title">Single Stock Quantitative Research Dossier</h1>
+                        <h1 class="panel-title" style="display: flex; align-items: center; gap: 8px;">
+                            Single Stock Quantitative Research Dossier
+                            <span class="tip-badge"
+                                data-tip-title="Single Stock Deep Research Dossier"
+                                data-tip-cat="QUANTITATIVE PLATFORM"
+                                data-tip-what="Institutional-grade alpha intelligence, cross-sectional decile rank, risk-parity position sizing, earnings event risk, and derivatives structure for any US equity."
+                                data-tip-rule="Type any ticker (e.g. AMZN, NVDA, TSLA, PLTR) or click quick select chips to research instantly. Hover over any (?) badge or metric box across the dossier for full quantitative explanations.">?</span>
+                        </h1>
                         <p class="panel-desc">Deep-dive predictive alpha signals, earnings lifecycle, options positioning, and 7-feature breakdown for any stock.</p>
                     </div>
                     <div class="panel-actions">
@@ -151,7 +158,14 @@
                         </button>
                     </div>
                     <div class="quick-chips-row">
-                        <span class="chips-label">Quick Select:</span>
+                        <span class="chips-label" style="display: flex; align-items: center; gap: 5px;">
+                            Quick Select:
+                            <span class="tip-badge"
+                                data-tip-title="Quick Select Shortcuts"
+                                data-tip-cat="MARKET COVERAGE"
+                                data-tip-what="Instant shortcuts to high-liquidity leaders across Tech, AI Infrastructure, Consumer Discretionary, and Healthcare."
+                                data-tip-rule="Click any chip to immediately generate its complete research dossier.">?</span>
+                        </span>
                         <div class="chips-list">
                             <button class="chip-pill active" onclick="app.setQuickStock('AMZN')">AMZN</button>
                             <button class="chip-pill" onclick="app.setQuickStock('NVDA')">NVDA</button>

@@ -1606,3 +1606,214 @@ body.dark-theme {
     color: var(--text-secondary);
 }
 
+/* ==========================================================================
+   Global Interactive Tooltip System
+   ========================================================================== */
+
+.global-tooltip {
+    position: absolute;
+    z-index: 999999;
+    max-width: 380px;
+    min-width: 270px;
+    background: rgba(10, 16, 32, 0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(6, 182, 212, 0.45);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    color: var(--text-primary);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 25px rgba(6, 182, 212, 0.2);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.global-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.global-tooltip.hidden {
+    display: none;
+}
+
+.tooltip-header {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.tooltip-cat {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-cyan);
+}
+
+.tooltip-title {
+    font-family: var(--font-display);
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 0;
+    letter-spacing: -0.01em;
+}
+
+.tooltip-body {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+
+.tooltip-section {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.tooltip-section-label {
+    font-size: 0.64rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+
+.tooltip-desc {
+    font-size: 0.82rem;
+    line-height: 1.48;
+    color: #cbd5e1;
+    margin: 0;
+}
+
+.tooltip-desc.mono {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: #e2e8f0;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 6px 9px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    word-break: break-word;
+}
+
+.tooltip-rule-box {
+    background: rgba(6, 182, 212, 0.09);
+    border: 1px solid rgba(6, 182, 212, 0.28);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    margin-top: 2px;
+}
+
+.tooltip-rule-box .tooltip-section-label {
+    color: var(--accent-cyan);
+}
+
+.tooltip-rule-text {
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: #f1f5f9;
+    font-weight: 500;
+    margin: 0;
+}
+
+/* Tooltip Badges & Triggers */
+.tip-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid rgba(6, 182, 212, 0.4);
+    background: rgba(6, 182, 212, 0.1);
+    color: var(--accent-cyan);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: help;
+    margin-left: 6px;
+    user-select: none;
+    transition: all var(--transition-fast);
+    vertical-align: middle;
+}
+
+.tip-badge:hover {
+    background: var(--accent-cyan);
+    color: #070a13;
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.6);
+    transform: scale(1.15);
+}
+
+.tip-badge-light {
+    border-color: rgba(255, 255, 255, 0.35);
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.tip-badge-light:hover {
+    background: #ffffff;
+    color: #070a13;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.6);
+    transform: scale(1.15);
+}
+
+.chip-q {
+    font-size: 9px;
+    opacity: 0.6;
+    margin-left: 3px;
+    font-weight: 700;
+    color: var(--accent-cyan);
+    display: inline-block;
+    transition: opacity var(--transition-fast);
+}
+
+.has-tip {
+    cursor: help;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.has-tip:hover {
+    border-color: rgba(6, 182, 212, 0.35) !important;
+}
+
+.stat-chip {
+    cursor: help;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+
+.stat-chip:hover {
+    background: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.35);
+    color: #ffffff;
+}
+
+.card-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 6px;
+}
+
+.title-with-tip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+

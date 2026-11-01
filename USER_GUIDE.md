@@ -203,6 +203,13 @@ Enables institutional-grade quantitative research for **any individual equity of
 6. **Interactive Price, VWAP & SMA50 Chart:**
    - Interactive 90-day time-series showing spot daily close prices, rolling 20-day institutional VWAP, and 50-day Simple Moving Average.
 
+7. **Interactive Tooltips & Educational Guidance:**
+   - **Hover / Tap Anywhere:** Every metric box, card label, technical indicator, and feature card includes an interactive `(?)` tooltip badge.
+   - **Structured Guidance:** Hovering over any element reveals:
+     - **Metric Definition & Scale:** Clear, non-technical explanation of what the metric calculates.
+     - **Formula / Microstructure:** Exact mathematical formula or order flow calculation.
+     - **Decision Rule & Actionable Threshold:** Concrete quantitative rules of thumb (e.g. `Score > +0.02 = Long Candidate`, `≤ 3 Days = Blackout / Entry Forbidden`, `Net GEX > 0 = Volatility Dampening`).
+
 ---
 
 ### Tab 3: Backtest Simulation & Performance Tearsheet

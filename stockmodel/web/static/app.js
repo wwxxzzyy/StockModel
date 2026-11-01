@@ -13,7 +13,126 @@ class StockModelApp {
         this.currentStockSymbol = 'AMZN';
         this.singleStockLoaded = false;
         this.chartSingleStock = null;
+        this.initTooltipSystem();
         this.initEventListeners();
+    }
+
+    initTooltipSystem() {
+        let tooltipEl = document.getElementById('global-tooltip');
+        if (!tooltipEl) {
+            tooltipEl = document.createElement('div');
+            tooltipEl.id = 'global-tooltip';
+            tooltipEl.className = 'global-tooltip hidden';
+            document.body.appendChild(tooltipEl);
+        }
+
+        let activeTrigger = null;
+        let hideTimeout = null;
+
+        const showTooltip = (triggerEl) => {
+            clearTimeout(hideTimeout);
+            activeTrigger = triggerEl;
+
+            const title = triggerEl.getAttribute('data-tip-title') || 'Metric Explanation';
+            const cat = triggerEl.getAttribute('data-tip-cat') || 'ANALYTICS';
+            const what = triggerEl.getAttribute('data-tip-what') || '';
+            const how = triggerEl.getAttribute('data-tip-how') || '';
+            const rule = triggerEl.getAttribute('data-tip-rule') || '';
+
+            tooltipEl.innerHTML = `
+                <div class="tooltip-header">
+                    <span class="tooltip-cat">${cat}</span>
+                    <h4 class="tooltip-title">${title}</h4>
+                </div>
+                <div class="tooltip-body">
+                    ${what ? `
+                    <div class="tooltip-section">
+                        <span class="tooltip-section-label">What it means</span>
+                        <p class="tooltip-desc">${what}</p>
+                    </div>` : ''}
+                    ${how ? `
+                    <div class="tooltip-section">
+                        <span class="tooltip-section-label">Calculation / Formula</span>
+                        <p class="tooltip-desc mono">${how}</p>
+                    </div>` : ''}
+                    ${rule ? `
+                    <div class="tooltip-section tooltip-rule-box">
+                        <span class="tooltip-section-label">💡 Quantitative Rule / Decision Threshold</span>
+                        <p class="tooltip-rule-text">${rule}</p>
+                    </div>` : ''}
+                </div>
+            `;
+
+            tooltipEl.classList.remove('hidden');
+
+            // Position tooltip dynamically relative to trigger element
+            const rect = triggerEl.getBoundingClientRect();
+            const tipRect = tooltipEl.getBoundingClientRect();
+
+            let top = rect.top - tipRect.height - 12;
+            let left = rect.left + (rect.width / 2) - (tipRect.width / 2);
+
+            // If not enough room above viewport, flip below trigger
+            if (top < 15) {
+                top = rect.bottom + 12;
+                tooltipEl.setAttribute('data-placement', 'bottom');
+            } else {
+                tooltipEl.setAttribute('data-placement', 'top');
+            }
+
+            // Clamping inside horizontal viewport bounds
+            if (left < 14) left = 14;
+            if (left + tipRect.width > window.innerWidth - 14) {
+                left = window.innerWidth - tipRect.width - 14;
+            }
+
+            tooltipEl.style.top = `${Math.round(top + window.scrollY)}px`;
+            tooltipEl.style.left = `${Math.round(left + window.scrollX)}px`;
+            tooltipEl.classList.add('visible');
+        };
+
+        const hideTooltip = () => {
+            hideTimeout = setTimeout(() => {
+                tooltipEl.classList.remove('visible');
+                setTimeout(() => {
+                    if (!tooltipEl.classList.contains('visible')) {
+                        tooltipEl.classList.add('hidden');
+                    }
+                }, 180);
+                activeTrigger = null;
+            }, 120);
+        };
+
+        // Delegated events for hovering over badges, chips, or metric cards
+        document.body.addEventListener('pointerenter', (e) => {
+            const trigger = e.target.closest('.tip-badge, .has-tip, [data-tip-title]');
+            if (trigger) showTooltip(trigger);
+        }, true);
+
+        document.body.addEventListener('pointerleave', (e) => {
+            const trigger = e.target.closest('.tip-badge, .has-tip, [data-tip-title]');
+            if (trigger) hideTooltip();
+        }, true);
+
+        // Click support (especially useful on mobile or touch screens)
+        document.body.addEventListener('click', (e) => {
+            const trigger = e.target.closest('.tip-badge, .has-tip, [data-tip-title]');
+            if (trigger) {
+                if (activeTrigger === trigger && tooltipEl.classList.contains('visible')) {
+                    hideTooltip();
+                } else {
+                    showTooltip(trigger);
+                }
+            } else if (!e.target.closest('#global-tooltip')) {
+                hideTooltip();
+            }
+        });
+
+        window.addEventListener('scroll', () => {
+            if (tooltipEl.classList.contains('visible')) {
+                hideTooltip();
+            }
+        }, { passive: true });
     }
 
     initEventListeners() {
@@ -878,61 +997,155 @@ class StockModelApp {
                         <h2 class="dossier-symbol">${data.symbol}</h2>
                         <span class="dossier-sector-pill">${data.sector}</span>
                         <span class="dossier-source-pill">${data.source === 'moomoo' ? '🟢 Moomoo OpenD' : '🟡 Simulation'}</span>
+                        <span class="tip-badge" 
+                            data-tip-title="Asset Identity & Market Feed" 
+                            data-tip-cat="MARKET DATA FEED" 
+                            data-tip-what="Identifies the company, GICS sector, and whether market metrics were ingested live via Moomoo OpenD from stockserver or generated through cross-sectional simulation." 
+                            data-tip-rule="Live OpenD feed evaluates real-time market data across 50+ liquid US equities and on-demand ad-hoc tickers.">?</span>
                     </div>
                     <div class="dossier-price-row">
                         <span class="dossier-price">$${q.close.toFixed(2)}</span>
                         <span class="dossier-change ${changeClass}">${changeSign}$${q.change_1d.toFixed(2)} (${changeSign}${q.change_1d_pct.toFixed(2)}%)</span>
                     </div>
                     <div class="dossier-stats-chips">
-                        <span><strong>Market Cap:</strong> ${q.market_cap_fmt}</span>
-                        <span><strong>52W Range:</strong> $${q.low_52w.toFixed(2)} - $${q.high_52w.toFixed(2)}</span>
-                        <span><strong>20d VWAP:</strong> $${q.vwap_20 ? q.vwap_20.toFixed(2) : '--'}</span>
-                        <span><strong>50d SMA:</strong> $${q.sma_50 ? q.sma_50.toFixed(2) : '--'}</span>
+                        <span class="stat-chip has-tip"
+                            data-tip-title="Market Capitalization"
+                            data-tip-cat="COMPANY SCALE"
+                            data-tip-what="Total dollar market value of the company's outstanding equity shares ($P × Shares Outstanding)."
+                            data-tip-rule="Mega-caps (>$200B) have deep liquidity and low execution slippage (~8 bps); mid-caps incur slightly wider spreads (~15 bps).">
+                            <strong>Market Cap:</strong> ${q.market_cap_fmt} <span class="chip-q">?</span>
+                        </span>
+                        <span class="stat-chip has-tip"
+                            data-tip-title="52-Week Price Range"
+                            data-tip-cat="TECHNICAL EXTREMES"
+                            data-tip-what="The lowest and highest daily closing prices recorded over the preceding 52 weeks (252 trading days)."
+                            data-tip-rule="Stocks breaking out to fresh 52-week highs with positive momentum show strong institutional sponsorship; stocks near 52-week lows carry squeeze volatility.">
+                            <strong>52W Range:</strong> $${q.low_52w.toFixed(2)} - $${q.high_52w.toFixed(2)} <span class="chip-q">?</span>
+                        </span>
+                        <span class="stat-chip has-tip"
+                            data-tip-title="20-Day Rolling Institutional VWAP"
+                            data-tip-cat="VOLUME BENCHMARK"
+                            data-tip-what="Volume-Weighted Average Price across the last 20 trading days: ∑(Price × Volume) / ∑Volume."
+                            data-tip-rule="Represents the average price paid by institutional investors over the past month. Spot price trading above 20d VWAP indicates buyers are in aggressive control.">
+                            <strong>20d VWAP:</strong> $${q.vwap_20 ? q.vwap_20.toFixed(2) : '--'} <span class="chip-q">?</span>
+                        </span>
+                        <span class="stat-chip has-tip"
+                            data-tip-title="50-Day Simple Moving Average"
+                            data-tip-cat="INTERMEDIATE TREND"
+                            data-tip-what="Average closing price over the past 50 trading days (~10 calendar weeks)."
+                            data-tip-rule="Primary institutional benchmark for medium-term structural trend. When spot price & 20d VWAP are both above 50d SMA, the stock is in a confirmed structural uptrend.">
+                            <strong>50d SMA:</strong> $${q.sma_50 ? q.sma_50.toFixed(2) : '--'} <span class="chip-q">?</span>
+                        </span>
                     </div>
                 </div>
 
                 <div class="dossier-verdict-box ${signalClass}">
-                    <span class="verdict-pretitle">QUANTITATIVE MODEL SIGNAL</span>
+                    <div class="verdict-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span class="verdict-pretitle">QUANTITATIVE MODEL SIGNAL</span>
+                        <span class="tip-badge tip-badge-light"
+                            data-tip-title="Quantitative Model Signal & Verdict"
+                            data-tip-cat="GBDT ALPHA ENGINE"
+                            data-tip-what="The consolidated trade verdict generated by our LightGBM gradient boosted decision tree (GBDT) model after cross-sectional ranking and earnings risk gating."
+                            data-tip-rule="• TOP DECILE STRONG LONG: Top 10% expected return; high-conviction swing candidate.<br>• DEC 2 OVERPERFORM LONG: Top 20% candidate.<br>• NEUTRAL / HOLD: Deciles 3–8; average market performance.<br>• UNDERPERFORM SHORT: Deciles 9–10; underperforming relative to universe.<br>• EARNINGS BLACKOUT: Scheduled earnings in ≤ 3 days; entry forbidden to prevent binary gap risk.">?</span>
+                    </div>
                     <h3 class="verdict-title">${v.signal_label}</h3>
                     <div class="verdict-meta">
-                        <span class="verdict-score">Score: <strong>${v.pred_score > 0 ? '+' : ''}${v.pred_score}</strong></span>
-                        <span class="verdict-percentile">Rank: <strong>${v.percentile}th %ile (Decile ${v.decile})</strong></span>
+                        <span class="verdict-score has-tip"
+                            data-tip-title="Predicted Alpha Score"
+                            data-tip-cat="LIGHTGBM FORECAST"
+                            data-tip-what="Out-of-sample forecast of 10-20 trading day forward return relative to the universe median, trained on purged & embargoed walk-forward splits."
+                            data-tip-how="Standardized normalized score between -1.0 and +1.0."
+                            data-tip-rule="Scores > +0.02 indicate significant expected outperformance (Long candidate); scores < -0.02 indicate underperformance (Short candidate).">
+                            Score: <strong>${v.pred_score > 0 ? '+' : ''}${v.pred_score}</strong> <span class="chip-q">?</span>
+                        </span>
+                        <span class="verdict-percentile has-tip"
+                            data-tip-title="Cross-Sectional Percentile & Decile Rank"
+                            data-tip-cat="UNIVERSE RANKING"
+                            data-tip-what="Where this stock ranks compared to all other liquid equities in the universe. Decile 10 (90th–100th percentile) represents the top 10% highest expected returns."
+                            data-tip-rule="Long positions are strictly selected from the top decile; short positions target the bottom decile.">
+                            Rank: <strong>${v.percentile}th %ile (Decile ${v.decile})</strong> <span class="chip-q">?</span>
+                        </span>
                     </div>
                     <div class="verdict-sizing">
-                        <span>Inverse-ATR Sizing: <strong>${v.suggested_weight_pct}%</strong></span>
-                        <span>ATR(14): <strong>$${q.atr_14.toFixed(2)} (${q.atr_14_pct}%)</strong></span>
+                        <span class="has-tip"
+                            data-tip-title="Inverse-ATR Risk Parity Sizing"
+                            data-tip-cat="POSITION SIZING"
+                            data-tip-what="Target portfolio weight scaled inversely by 14-day volatility: w_i ∝ 1 / ATR_14(i)."
+                            data-tip-rule="Higher volatility stocks receive smaller position sizes so every asset contributes equal dollar risk to the portfolio, preventing volatile names from dominating portfolio P&L.">
+                            Inverse-ATR Sizing: <strong>${v.suggested_weight_pct}%</strong> <span class="chip-q">?</span>
+                        </span>
+                        <span class="has-tip"
+                            data-tip-title="14-Day Average True Range (ATR)"
+                            data-tip-cat="VOLATILITY RISK"
+                            data-tip-what="Average daily high-to-low trading range over the past 14 trading days, including overnight price gaps."
+                            data-tip-how="Expressed in dollars ($${q.atr_14.toFixed(2)}) and percentage of share price (${q.atr_14_pct}%)."
+                            data-tip-rule="Used to set dynamic volatility stop-losses (e.g. 2 × ATR) and calibrate position sizing.">
+                            ATR(14): <strong>$${q.atr_14.toFixed(2)} (${q.atr_14_pct}%)</strong> <span class="chip-q">?</span>
+                        </span>
                     </div>
                 </div>
             </div>
 
             <!-- 4 Quick Telemetry Cards -->
             <div class="metric-grid-4">
-                <div class="metric-card">
-                    <span class="card-label">Predicted 2-4W Alpha</span>
+                <div class="metric-card has-tip"
+                    data-tip-title="Predicted 2-4W Alpha Score"
+                    data-tip-cat="GBDT ALPHA ENGINE"
+                    data-tip-what="The model's out-of-sample forecast for 10-20 trading days forward return relative to the cross-sectional universe median."
+                    data-tip-how="Calculated using LightGBM trained on 7 orthogonal quantitative features with purged & embargoed cross-validation."
+                    data-tip-rule="Decile 10 assets (top 10%) have historically delivered statistically significant positive Information Coefficients (IC ≥ 0.035).">
+                    <div class="card-label-row">
+                        <span class="card-label">Predicted 2-4W Alpha</span>
+                        <span class="tip-badge">?</span>
+                    </div>
                     <div class="card-value-group">
                         <span class="card-value ${v.pred_score >= 0 ? 'highlight-cyan' : 'highlight-rose'}">${v.pred_score > 0 ? '+' : ''}${v.pred_score}</span>
                     </div>
                     <span class="card-hint">${v.percentile}th percentile relative to peers</span>
                 </div>
 
-                <div class="metric-card">
-                    <span class="card-label">Earnings Lifecycle</span>
+                <div class="metric-card has-tip"
+                    data-tip-title="Earnings Lifecycle & Blackout Policy"
+                    data-tip-cat="EVENT RISK POLICY"
+                    data-tip-what="Point-in-time calculation of trading days until the next scheduled earnings report, or trading days elapsed since the prior announcement."
+                    data-tip-how="Cross-referenced against corporate earnings calendars with rate-limited OpenD synchronization."
+                    data-tip-rule="• ≤ 3 Trading Days: BLACKOUT WINDOW — New entry strictly forbidden to eliminate binary overnight gap risk.<br>• 1–10 Days Post-Earnings: PEAD WINDOW — Exploit Post-Earnings Announcement Drift if momentum is positive.<br>• > 10 Days: NORMAL TRADING — Standard swing holding period.">
+                    <div class="card-label-row">
+                        <span class="card-label">Earnings Lifecycle</span>
+                        <span class="tip-badge">?</span>
+                    </div>
                     <div class="card-value-group">
                         <span class="card-value ${e.in_blackout ? 'highlight-amber' : (e.is_post_earnings ? 'highlight-purple' : 'highlight-cyan')}">${e.days_to_earnings}d</span>
                     </div>
                     <span class="card-hint">${e.status_text}</span>
                 </div>
 
-                <div class="metric-card">
-                    <span class="card-label">Net Gamma Exposure</span>
+                <div class="metric-card has-tip"
+                    data-tip-title="Net Dealer Gamma Exposure (Net GEX)"
+                    data-tip-cat="OPTIONS MICROSTRUCTURE"
+                    data-tip-what="Dollar gamma sensitivity of near-the-money Call options minus near-the-money Put options held by market makers (ATM Call GEX - ATM Put GEX)."
+                    data-tip-how="Dealers dynamically hedge options inventory by buying/selling the underlying shares."
+                    data-tip-rule="• POSITIVE GEX (Call Gamma > Put Gamma): Market makers buy dips and sell rips, dampening volatility and supporting mean-reversion.<br>• NEGATIVE GEX (Put Gamma > Call Gamma): Market makers must sell when price drops and buy when price rallies, accelerating volatility and fueling momentum breakouts.">
+                    <div class="card-label-row">
+                        <span class="card-label">Net Gamma Exposure</span>
+                        <span class="tip-badge">?</span>
+                    </div>
                     <div class="card-value-group">
                         <span class="card-value ${d.net_gex >= 0 ? 'highlight-cyan' : 'highlight-rose'}">$${(d.net_gex / 1000).toFixed(0)}k</span>
                     </div>
                     <span class="card-hint">${d.gex_regime}</span>
                 </div>
 
-                <div class="metric-card">
-                    <span class="card-label">Short Squeeze Risk</span>
+                <div class="metric-card has-tip"
+                    data-tip-title="Short Squeeze Risk & Days to Cover"
+                    data-tip-cat="MARKET STRUCTURE"
+                    data-tip-what="Total shares held short divided by the 20-day Average Daily Volume (ADV20): Short Interest / ADV20."
+                    data-tip-how="Represents the estimated number of full trading days required for short sellers to buy back all borrowed shares."
+                    data-tip-rule="Days to cover > 4-5 days combined with positive price momentum creates high risk of an explosive short squeeze as bears are forced to cover.">
+                    <div class="card-label-row">
+                        <span class="card-label">Short Squeeze Risk</span>
+                        <span class="tip-badge">?</span>
+                    </div>
                     <div class="card-value-group">
                         <span class="card-value highlight-cyan">${d.days_to_cover}d</span>
                     </div>
@@ -945,7 +1158,15 @@ class StockModelApp {
                 <div class="card chart-card">
                     <div class="chart-header">
                         <div>
-                            <h3 class="chart-title">Price Action & Institutional VWAP (90 Trading Days)</h3>
+                            <div class="title-with-tip" style="display: flex; align-items: center; gap: 8px;">
+                                <h3 class="chart-title">Price Action & Institutional VWAP (90 Trading Days)</h3>
+                                <span class="tip-badge"
+                                    data-tip-title="Price Action, 20d VWAP & 50d SMA Chart"
+                                    data-tip-cat="CHART DIAGNOSTICS"
+                                    data-tip-what="Interactive 90-trading-day time-series displaying daily spot closing prices against two critical institutional benchmarks."
+                                    data-tip-how="• Blue Line: Daily Close Price.<br>• Emerald Dashed Line: 20-Day Rolling Institutional VWAP.<br>• Purple Dashed Line: 50-Day Trend SMA."
+                                    data-tip-rule="When price pulls back and bounces off the 20d VWAP or 50d SMA during an established uptrend, it indicates institutional re-accumulation and strong swing support.">?</span>
+                            </div>
                             <p class="chart-subtitle">Close price with 20-day rolling institutional VWAP and 50-day trend SMA.</p>
                         </div>
                     </div>
@@ -955,13 +1176,27 @@ class StockModelApp {
                 </div>
 
                 <div class="card diagnosis-card">
-                    <h3 class="chart-title">Quantitative Diagnostic Rationale</h3>
+                    <div class="title-with-tip" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <h3 class="chart-title" style="margin: 0;">Quantitative Diagnostic Rationale</h3>
+                        <span class="tip-badge"
+                            data-tip-title="Algorithmic Synthesis Rationale"
+                            data-tip-cat="NARRATIVE SYNTHESIS"
+                            data-tip-what="Multi-factor natural language diagnostic synthesized by the alpha engine, detailing the primary feature driver, volatility state, and event risk factors."
+                            data-tip-rule="Explains exactly why this asset was placed in its decile rank and what primary driver is propelling its alpha forecast.">?</span>
+                    </div>
                     <div class="narrative-content">
                         <p class="narrative-text">${v.summary_narrative}</p>
                     </div>
 
                     <div class="event-risk-block">
-                        <h4 class="event-risk-title">Event & Earnings Risk Review</h4>
+                        <div class="title-with-tip" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <h4 class="event-risk-title" style="margin: 0;">Event & Earnings Risk Review</h4>
+                            <span class="tip-badge"
+                                data-tip-title="Event & Earnings Risk Policy"
+                                data-tip-cat="RISK MANAGEMENT"
+                                data-tip-what="Enforces strict risk policy regarding corporate earnings announcements to protect against binary overnight gap losses."
+                                data-tip-rule="Positions are automatically flagged for liquidation or entry prohibition if scheduled within ≤ 3 trading days of earnings.">?</span>
+                        </div>
                         <div class="event-risk-item">
                             <span class="risk-label">Next Scheduled Print:</span>
                             <span class="risk-val">${e.next_earnings_date || 'Unscheduled (~91d Cycle)'} (${e.days_to_earnings} trading days)</span>
@@ -979,7 +1214,14 @@ class StockModelApp {
                     </div>
 
                     <div class="derivatives-block">
-                        <h4 class="event-risk-title">Options Positioning Profile</h4>
+                        <div class="title-with-tip" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <h4 class="event-risk-title" style="margin: 0;">Options Positioning Profile</h4>
+                            <span class="tip-badge"
+                                data-tip-title="Options Market Positioning Profile"
+                                data-tip-cat="DERIVATIVES ORDER FLOW"
+                                data-tip-what="Breakdown of near-the-money options volume, Put/Call volume ratio, and dealer gamma positioning."
+                                data-tip-rule="PCR < 0.70 reflects bullish speculative demand; PCR > 1.00 reflects defensive hedging or bearish sentiment. ATM Call vs Put GEX indicates whether dealers will support or accelerate price moves.">?</span>
+                        </div>
                         <div class="event-risk-item">
                             <span class="risk-label">Call / Put Volume Ratio (PCR):</span>
                             <span class="risk-val">${d.pcr_ratio} (${(d.call_volume / 1000).toFixed(0)}k calls / ${(d.put_volume / 1000).toFixed(0)}k puts)</span>
@@ -998,16 +1240,69 @@ class StockModelApp {
 
             <!-- 7 Core Alpha Features Deep-Dive Cards -->
             <div class="features-dossier-section">
-                <h3 class="section-title">The 7 Core Alpha Features Breakdown</h3>
+                <div class="title-with-tip" style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                    <h3 class="section-title" style="margin: 0;">The 7 Core Alpha Features Breakdown</h3>
+                    <span class="tip-badge"
+                        data-tip-title="The 7 Core Alpha Features Engine"
+                        data-tip-cat="FEATURE ARCHITECTURE"
+                        data-tip-what="All 7 normalized features used by the LightGBM model to forecast cross-sectional alpha. Each feature is z-scored and mapped into a bounded [-1.0, +1.0] domain."
+                        data-tip-rule="Features are evaluated against the cross-sectional universe distribution. Percentiles > 60% indicate bullish alignment; percentiles < 40% indicate bearish alignment.">?</span>
+                </div>
                 <div class="feature-cards-grid">
                     ${data.features.map(f => {
                         const sentClass = f.sentiment === 'BULLISH' ? 'sentiment-bullish' : (f.sentiment === 'BEARISH' ? 'sentiment-bearish' : 'sentiment-neutral');
                         const barWidth = Math.min(100, Math.max(5, (f.score + 1.0) * 50));
+                        const featureTooltips = {
+                            "feat_short_squeeze_pressure": {
+                                "cat": "MARKET STRUCTURE",
+                                "formula": "(Short Interest / ADV20) × ((Close - SMA50) / ATR14)",
+                                "rule": "Values > +0.30 indicate short sellers are trapped above the 50d SMA, creating asymmetric upside squeeze potential."
+                            },
+                            "feat_net_gex": {
+                                "cat": "DERIVATIVES MICROSTRUCTURE",
+                                "formula": "ATM Call Gamma - ATM Put Gamma",
+                                "rule": "Positive GEX dampens realized volatility; Negative GEX fuels momentum breakout runs."
+                            },
+                            "feat_pcr_momentum": {
+                                "cat": "OPTIONS SENTIMENT",
+                                "formula": "(PCR_10d / PCR_50d) - 1.0",
+                                "rule": "Decreasing PCR (< 0) indicates institutional speculation moving aggressively into calls."
+                            },
+                            "feat_sector_relative_momentum": {
+                                "cat": "TREND / MOMENTUM",
+                                "formula": "Return_20d(Asset) - Return_20d(Sector Benchmark)",
+                                "rule": "Positive excess returns identify true industry leaders outperforming their peer group."
+                            },
+                            "feat_vwap_divergence": {
+                                "cat": "VOLUME DISTRIBUTION",
+                                "formula": "(Close - Rolling_20d_VWAP) / ATR14",
+                                "rule": "Measures pullbacks to institutional support. Pullbacks to 0 indicate optimal swing entry."
+                            },
+                            "feat_vix_slope": {
+                                "cat": "MACRO REGIME",
+                                "formula": "VIX Spot / VIX 3-Month",
+                                "rule": "Values < 1.0 (Contango) favor equity carry and trend; values > 1.0 (Backwardation) signal macro panic."
+                            },
+                            "feat_sue_score": {
+                                "cat": "FUNDAMENTAL PEAD DRIFT",
+                                "formula": "Standardized Unexpected Earnings × exp(-λ × t)",
+                                "rule": "Exploits the well-documented Post-Earnings Announcement Drift over 10-30 trading days."
+                            }
+                        };
+                        const tipMeta = featureTooltips[f.id] || { cat: f.category, formula: f.explanation, rule: "Standardized alpha feature." };
                         return `
-                            <div class="feature-detail-card card">
+                            <div class="feature-detail-card card has-tip"
+                                data-tip-title="${f.name}"
+                                data-tip-cat="${tipMeta.cat}"
+                                data-tip-what="${f.explanation}"
+                                data-tip-how="${tipMeta.formula}"
+                                data-tip-rule="${tipMeta.rule}">
                                 <div class="f-card-header">
                                     <span class="f-category">${f.category}</span>
-                                    <span class="f-sentiment ${sentClass}">${f.sentiment}</span>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <span class="f-sentiment ${sentClass}">${f.sentiment}</span>
+                                        <span class="tip-badge">?</span>
+                                    </div>
                                 </div>
                                 <h4 class="f-name">${f.name}</h4>
                                 <div class="f-score-row">
