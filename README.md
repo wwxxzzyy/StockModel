@@ -2,6 +2,8 @@
 
 A systematic quantitative trading and alpha research system designed to predict relative multi-week equity performance using cross-sectional gradient-boosted decision trees (LightGBM) with an ElasticNet linear baseline and strict temporal leakage prevention.
 
+> 📖 **Comprehensive User Guide & Operator Manual:** See [USER_GUIDE.md](file:///home/shawn/git/StockModel/USER_GUIDE.md) for step-by-step instructions on daily portfolio workflows, web UI features, live Moomoo OpenD ingestion, REST API reference, and deployment procedures.
+
 ---
 
 ## 1. Core Principles
