@@ -7,12 +7,13 @@ to extract historical daily bars, options chains, short interest, and market str
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -60,6 +61,99 @@ SECTOR_MAP = {
     "XOM": "Energy", "CVX": "Energy", "COP": "Energy", "SLB": "Energy",
     "CAT": "Industrials", "GE": "Industrials", "HON": "Industrials", "UPS": "Industrials", "BA": "Industrials",
 }
+
+
+def analyze_earnings_lifecycle(
+    sym: str,
+    as_of_date: str,
+    pub_dates: Optional[List[str]] = None,
+    unique_dates: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Computes Point-in-Time earnings lifecycle indicators for a given symbol and date.
+
+    Distinguishes:
+    1. Post-earnings reaction window (days_since_earnings <= 10).
+    2. Upcoming earnings blackout (days_to_earnings <= 3).
+    3. Normal intermediate holding period.
+    4. Quarterly cycle projection when next date is unannounced.
+    """
+    pubs = sorted(pub_dates) if pub_dates else []
+    d = as_of_date
+    past_pubs = [p for p in pubs if p <= d]
+    future_pubs = [p for p in pubs if p > d]
+
+    if past_pubs and not future_pubs:
+        # Stock has just reported earnings (e.g., AMZN reported Oct 29)
+        last_pub = past_pubs[-1]
+        days_since = int(np.busday_count(last_pub, d))
+        # Project next quarterly earnings announcement (~91 calendar days forward)
+        proj_dt = datetime.strptime(last_pub, "%Y-%m-%d") + timedelta(days=91)
+        if proj_dt.weekday() == 5:
+            proj_dt += timedelta(days=2)
+        elif proj_dt.weekday() == 6:
+            proj_dt += timedelta(days=1)
+        next_pub = proj_dt.strftime("%Y-%m-%d")
+
+        d_dt = datetime.strptime(d, "%Y-%m-%d")
+        if proj_dt > d_dt:
+            days_to = max(1, int(np.busday_count(d, next_pub)))
+        else:
+            days_to = 63
+
+        is_post = bool(days_since <= 10)
+        status_text = (
+            f"Passed {last_pub} ({days_since}d ago)"
+            if is_post
+            else f"Est. Next: {next_pub} (~{days_to}d)"
+        )
+        return {
+            "days_to_earnings": days_to,
+            "days_since_earnings": days_since,
+            "last_earnings_date": last_pub,
+            "next_earnings_date": next_pub,
+            "is_post_earnings": is_post,
+            "earnings_status_text": status_text,
+        }
+
+    elif future_pubs:
+        next_pub = future_pubs[0]
+        days_to = max(0, int(np.busday_count(d, next_pub)))
+        last_pub = past_pubs[-1] if past_pubs else ""
+        days_since = int(np.busday_count(last_pub, d)) if last_pub else 999
+        is_post = bool(days_since <= 10)
+
+        if is_post and last_pub:
+            status_text = f"Passed {last_pub} ({days_since}d ago)"
+        elif days_to <= 3:
+            status_text = f"Blackout: Reports {next_pub} (in {days_to}d)"
+        else:
+            status_text = f"Reports {next_pub} (in {days_to}d)"
+
+        return {
+            "days_to_earnings": max(1, days_to),
+            "days_since_earnings": days_since,
+            "last_earnings_date": last_pub,
+            "next_earnings_date": next_pub,
+            "is_post_earnings": is_post,
+            "earnings_status_text": status_text,
+        }
+
+    else:
+        # Fallback to deterministic 63-day quarterly cadence
+        offset = hash(sym) % 63
+        date_idx = unique_dates.index(d) if unique_dates and d in unique_dates else 0
+        days_to = int(63 - ((date_idx + offset) % 63))
+        days_since = max(0, 63 - days_to)
+        is_post = bool(days_since <= 10)
+        return {
+            "days_to_earnings": max(1, days_to),
+            "days_since_earnings": days_since,
+            "last_earnings_date": "",
+            "next_earnings_date": "",
+            "is_post_earnings": is_post,
+            "earnings_status_text": f"Est. Cycle ({days_to}d to next)",
+        }
 
 
 class MoomooMarketLoader:
@@ -220,27 +314,69 @@ class MoomooMarketLoader:
             time.sleep(0.04)
         return si_dict
 
-    def fetch_earnings_calendar(self, tickers: Optional[List[str]] = None) -> Dict[str, List[str]]:
+    def fetch_earnings_calendar(
+        self,
+        tickers: Optional[List[str]] = None,
+        cache_path: Optional[Union[str, Path]] = "data/earnings_calendar.json",
+    ) -> Dict[str, List[str]]:
         """
         Fetches official earnings announcement publication dates per ticker.
+        Loads from persistent cache if available to prevent OpenD rate limits (max 30 req / 30s).
         Returns symbol -> sorted list of announcement dates (YYYY-MM-DD).
         """
-        ctx = self._get_context()
         target_tickers = tickers or self.universe
         earn_map: Dict[str, List[str]] = {}
+        cpath = Path(cache_path) if cache_path else None
 
-        for sym in target_tickers:
-            code = self._us_code(sym)
+        # 1. Load from cache if available
+        if cpath and cpath.exists():
             try:
-                ret, data = ctx.get_financials_earnings_price_history(code)
-                if ret == 0 and not data.empty and "pub_trading_day_str" in data.columns:
-                    valid_pubs = data["pub_trading_day_str"].dropna().unique()
-                    pub_dates = sorted([str(d).split()[0] for d in valid_pubs if str(d).strip() != ""])
-                    if pub_dates:
-                        earn_map[sym] = pub_dates
+                with open(cpath, "r", encoding="utf-8") as f:
+                    earn_map = json.load(f)
+                logger.info("Loaded earnings calendar for %d symbols from cache %s", len(earn_map), cpath)
             except Exception as e:
-                logger.debug("Could not fetch earnings calendar for %s: %s", sym, e)
-            time.sleep(0.04)
+                logger.warning("Failed to load earnings cache from %s: %s", cpath, e)
+
+        # 2. Check for missing symbols
+        missing = [sym for sym in target_tickers if sym not in earn_map or not earn_map[sym]]
+        if not missing:
+            return earn_map
+
+        # 3. Query OpenD for missing symbols with safe throttling and rate limit retry
+        logger.info("Querying OpenD earnings calendar for %d missing symbols...", len(missing))
+        ctx = self._get_context()
+        updated = False
+
+        for sym in missing:
+            code = self._us_code(sym)
+            for attempt in range(2):
+                try:
+                    ret, data = ctx.get_financials_earnings_price_history(code)
+                    if ret == 0 and not data.empty and "pub_trading_day_str" in data.columns:
+                        valid_pubs = data["pub_trading_day_str"].dropna().unique()
+                        pub_dates = sorted([str(d).split()[0] for d in valid_pubs if str(d).strip() != ""])
+                        if pub_dates:
+                            earn_map[sym] = pub_dates
+                            updated = True
+                            break
+                    elif ret == -1:
+                        # Frequency rate limit hit, sleep 30s before retry
+                        logger.warning("OpenD frequency limit reached fetching %s. Sleeping 30s...", sym)
+                        time.sleep(30.0)
+                except Exception as e:
+                    logger.debug("Could not fetch earnings calendar for %s: %s", sym, e)
+                time.sleep(1.05)
+
+        # 4. Save back to cache if updated
+        if updated and cpath:
+            try:
+                cpath.parent.mkdir(parents=True, exist_ok=True)
+                with open(cpath, "w", encoding="utf-8") as f:
+                    json.dump(earn_map, f, indent=2)
+                logger.info("Saved updated earnings calendar to %s", cpath)
+            except Exception as e:
+                logger.error("Failed to save earnings calendar to %s: %s", cpath, e)
+
         return earn_map
 
     def fetch_options_gex(self, symbol: str, current_price: float) -> Tuple[float, float, float, float]:
@@ -327,24 +463,23 @@ class MoomooMarketLoader:
         bars_df["vix_spot"] = bars_df["date"].map(date_vix_map)
         bars_df["vix_3m"] = bars_df["date"].map(date_vix3m_map)
 
-        # Calculate exact Point-in-Time days to earnings
-        date_idx_map = {d: i for i, d in enumerate(unique_dates)}
-
-        def _calc_dte(row) -> int:
+        # Calculate exact Point-in-Time earnings lifecycle indicators
+        logger.info("Analyzing point-in-time earnings lifecycle for all symbols...")
+        lifecycle_records = []
+        for _, row in bars_df[["symbol", "date"]].iterrows():
             sym = row["symbol"]
             d = row["date"]
-            if sym in earn_calendar and earn_calendar[sym]:
-                # Find the next announcement on or after date d
-                future_pubs = [p for p in earn_calendar[sym] if p >= d]
-                if future_pubs:
-                    next_pub = future_pubs[0]
-                    # Estimate trading days
-                    delta_days = (datetime.strptime(next_pub, "%Y-%m-%d") - datetime.strptime(d, "%Y-%m-%d")).days
-                    return max(1, int(delta_days * 5 / 7))
-            # Fallback to 63-day quarterly cycle offset
-            return int(63 - ((date_idx_map.get(d, 0) + hash(sym)) % 63))
+            pubs = earn_calendar.get(sym, [])
+            info = analyze_earnings_lifecycle(sym, d, pubs, unique_dates=unique_dates)
+            lifecycle_records.append(info)
 
-        bars_df["days_to_earnings"] = bars_df.apply(_calc_dte, axis=1)
+        lifecycle_df = pd.DataFrame(lifecycle_records)
+        bars_df["days_to_earnings"] = lifecycle_df["days_to_earnings"].astype(int)
+        bars_df["days_since_earnings"] = lifecycle_df["days_since_earnings"].astype(int)
+        bars_df["last_earnings_date"] = lifecycle_df["last_earnings_date"].astype(str)
+        bars_df["next_earnings_date"] = lifecycle_df["next_earnings_date"].astype(str)
+        bars_df["is_post_earnings"] = lifecycle_df["is_post_earnings"].astype(bool)
+        bars_df["earnings_status_text"] = lifecycle_df["earnings_status_text"].astype(str)
 
         # Calculate Point-in-Time short interest
         def _get_short_interest(row) -> float:

@@ -69,3 +69,41 @@ def test_moomoo_panel_schema_compliance():
     assert MarketDataSchema.DATE in validated.columns
     assert MarketDataSchema.ATM_CALL_GEX in validated.columns
     assert MarketDataSchema.SHORT_INTEREST in validated.columns
+
+
+def test_analyze_earnings_lifecycle_post_earnings_amzn():
+    from stockmodel.data.moomoo_loader import analyze_earnings_lifecycle
+
+    amzn_pubs = ["2026-04-29", "2026-07-30", "2026-10-29"]
+    # 1 trading day after earnings release
+    res = analyze_earnings_lifecycle("AMZN", "2026-10-30", amzn_pubs)
+
+    assert res["is_post_earnings"] is True
+    assert res["days_since_earnings"] == 1
+    assert res["last_earnings_date"] == "2026-10-29"
+    assert res["days_to_earnings"] >= 60
+    assert "Passed 2026-10-29" in res["earnings_status_text"]
+
+
+def test_analyze_earnings_lifecycle_blackout_aapl():
+    from stockmodel.data.moomoo_loader import analyze_earnings_lifecycle
+
+    aapl_pubs = ["2026-04-30", "2026-07-30", "2026-11-02"]
+    # Friday 2026-10-30 before Monday 2026-11-02 earnings
+    res = analyze_earnings_lifecycle("AAPL", "2026-10-30", aapl_pubs)
+
+    assert res["is_post_earnings"] is False
+    assert res["days_to_earnings"] == 1
+    assert res["next_earnings_date"] == "2026-11-02"
+    assert "Blackout" in res["earnings_status_text"]
+
+
+def test_moomoo_earnings_calendar_cached():
+    loader = MoomooMarketLoader(universe=["AAPL", "AMZN"])
+    calendar = loader.fetch_earnings_calendar(["AAPL", "AMZN"], cache_path="data/earnings_calendar.json")
+
+    assert "AMZN" in calendar
+    assert "2026-10-29" in calendar["AMZN"]
+    assert "AAPL" in calendar
+    assert "2026-11-02" in calendar["AAPL"]
+    loader.close()

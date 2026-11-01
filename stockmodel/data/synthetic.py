@@ -122,6 +122,11 @@ class SyntheticMarketGenerator:
 
                     days_to_earnings = int(dte_series[t])
                     sue_score = float(sue_series[t])
+                    days_into_cycle = int((t + cycle_offset) % earnings_interval)
+                    is_post = bool(days_into_cycle <= 10)
+                    last_dt = (dt - timedelta(days=int(days_into_cycle * 7 / 5))).strftime("%Y-%m-%d")
+                    next_dt = (dt + timedelta(days=int(days_to_earnings * 7 / 5))).strftime("%Y-%m-%d")
+                    status_text = f"Passed {last_dt} ({days_into_cycle}d ago)" if is_post else (f"Blackout: Reports in {days_to_earnings}d" if days_to_earnings <= 3 else f"Reports in {days_to_earnings}d")
 
                     records.append({
                         MarketDataSchema.DATE: dt,
@@ -141,6 +146,11 @@ class SyntheticMarketGenerator:
                         MarketDataSchema.VIX_SPOT: float(vix_spot[t]),
                         MarketDataSchema.VIX_3M: float(vix_3m[t]),
                         MarketDataSchema.DAYS_TO_EARNINGS: int(days_to_earnings),
+                        MarketDataSchema.DAYS_SINCE_EARNINGS: int(days_into_cycle),
+                        MarketDataSchema.LAST_EARNINGS_DATE: last_dt,
+                        MarketDataSchema.NEXT_EARNINGS_DATE: next_dt,
+                        MarketDataSchema.IS_POST_EARNINGS: is_post,
+                        MarketDataSchema.EARNINGS_STATUS_TEXT: status_text,
                         MarketDataSchema.SUE_SCORE: sue_score,
                         MarketDataSchema.MARKET_CAP: float(mkt_cap),
                     })

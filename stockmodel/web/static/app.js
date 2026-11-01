@@ -267,12 +267,18 @@ class StockModelApp {
                             label: (context) => {
                                 const idx = context.dataIndex;
                                 const pos = sorted[idx];
-                                return [
+                                const lines = [
                                     ` Weight: ${pos.weight_pct}% (${pos.type})`,
                                     ` Model Score: ${pos.pred_score}`,
                                     ` ATR(14): $${pos.atr_14}`,
                                     ` Days to Earnings: ${pos.days_to_earnings}d`
                                 ];
+                                if (pos.is_post_earnings && pos.last_earnings_date) {
+                                    lines.push(` Earnings: Passed on ${pos.last_earnings_date}`);
+                                } else if (pos.next_earnings_date) {
+                                    lines.push(` Earnings: Reports ${pos.next_earnings_date}`);
+                                }
+                                return lines;
                             }
                         }
                     }
@@ -317,9 +323,42 @@ class StockModelApp {
 
         tbody.innerHTML = allocations.map(a => {
             const weightClass = a.type === 'LONG' ? 'long' : (a.type === 'SHORT' ? 'short' : 'flat');
-            const statusTag = a.in_blackout 
-                ? '<span class="badge-tag blackout">⚠️ Blackout Trim</span>' 
-                : '<span class="badge-tag active">Active</span>';
+            
+            let statusTag = '';
+            if (a.in_blackout) {
+                statusTag = `<span class="badge-tag blackout">⚠️ Blackout (${a.days_to_earnings}d)</span>`;
+            } else if (a.is_post_earnings) {
+                const daysAgo = (a.days_since_earnings !== null && a.days_since_earnings !== undefined && a.days_since_earnings >= 0) ? `${a.days_since_earnings}d ago` : 'Passed';
+                statusTag = `<span class="badge-tag post-earnings" title="Passed ${a.last_earnings_date}">🎉 Post-Earnings (${daysAgo})</span>`;
+            } else {
+                statusTag = '<span class="badge-tag active">Active</span>';
+            }
+
+            let dteHtml = '';
+            if (a.is_post_earnings && a.last_earnings_date) {
+                dteHtml = `
+                    <div class="dte-cell">
+                        <span class="dte-main">~${a.days_to_earnings}d to next</span>
+                        <span class="dte-sub passed">Passed ${a.last_earnings_date}</span>
+                    </div>
+                `;
+            } else if (a.in_blackout) {
+                dteHtml = `
+                    <div class="dte-cell">
+                        <span class="dte-main danger">${a.days_to_earnings}d</span>
+                        <span class="dte-sub danger">Reports ${a.next_earnings_date || 'Imminent'}</span>
+                    </div>
+                `;
+            } else if (a.next_earnings_date) {
+                dteHtml = `
+                    <div class="dte-cell">
+                        <span class="dte-main">${a.days_to_earnings}d</span>
+                        <span class="dte-sub">Reports ${a.next_earnings_date}</span>
+                    </div>
+                `;
+            } else {
+                dteHtml = `<div class="dte-cell"><span class="dte-main">${a.days_to_earnings} days</span></div>`;
+            }
 
             return `
                 <tr>
@@ -329,7 +368,7 @@ class StockModelApp {
                     <td style="font-family: var(--font-mono);">${a.pred_score}</td>
                     <td style="font-family: var(--font-mono);">$${a.close.toFixed(2)}</td>
                     <td style="font-family: var(--font-mono);">$${a.atr_14.toFixed(2)}</td>
-                    <td style="font-family: var(--font-mono);">${a.days_to_earnings} days</td>
+                    <td>${dteHtml}</td>
                     <td>${statusTag}</td>
                     <td>${a.sector}</td>
                 </tr>
@@ -339,9 +378,9 @@ class StockModelApp {
 
     exportAllocationsCSV() {
         if (!this.currentAllocations.length) return;
-        const headers = ['Symbol', 'Type', 'Weight_Pct', 'Pred_Score', 'Last_Close', 'ATR_14', 'Days_To_Earnings', 'In_Blackout', 'Sector'];
+        const headers = ['Symbol', 'Type', 'Weight_Pct', 'Pred_Score', 'Last_Close', 'ATR_14', 'Days_To_Earnings', 'Days_Since_Earnings', 'Last_Earnings_Date', 'Next_Earnings_Date', 'Is_Post_Earnings', 'In_Blackout', 'Sector'];
         const rows = this.currentAllocations.map(a => [
-            a.symbol, a.type, a.weight_pct, a.pred_score, a.close, a.atr_14, a.days_to_earnings, a.in_blackout, a.sector
+            a.symbol, a.type, a.weight_pct, a.pred_score, a.close, a.atr_14, a.days_to_earnings, a.days_since_earnings ?? '', a.last_earnings_date ?? '', a.next_earnings_date ?? '', a.is_post_earnings ?? false, a.in_blackout, a.sector
         ]);
         const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
         const encodedUri = encodeURI(csvContent);

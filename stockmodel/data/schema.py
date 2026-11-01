@@ -25,6 +25,11 @@ class MarketDataSchema:
     VIX_SPOT = "vix_spot"
     VIX_3M = "vix_3m"
     DAYS_TO_EARNINGS = "days_to_earnings"
+    DAYS_SINCE_EARNINGS = "days_since_earnings"
+    LAST_EARNINGS_DATE = "last_earnings_date"
+    NEXT_EARNINGS_DATE = "next_earnings_date"
+    IS_POST_EARNINGS = "is_post_earnings"
+    EARNINGS_STATUS_TEXT = "earnings_status_text"
     SUE_SCORE = "sue_score"
     MARKET_CAP = "market_cap"
 
