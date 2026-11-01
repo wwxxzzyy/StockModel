@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 import numpy as np
 import pandas as pd
+import polars as pl
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -48,14 +49,41 @@ app.add_middleware(
 _PANEL_CACHE: Dict[str, Any] = {}
 
 
-def _get_panel(days: int = 252, seed: int = 42):
-    cache_key = f"{days}_{seed}"
+def _get_panel(days: int = 252, seed: int = 42, source: str = "synthetic"):
+    cache_key = f"{days}_{seed}_{source}"
     if cache_key in _PANEL_CACHE:
         return _PANEL_CACHE[cache_key]
 
     cfg = SystemConfig()
-    gen = SyntheticMarketGenerator(seed=seed)
-    raw_df = gen.generate(n_days=days)
+    moomoo_file = Path("data/moomoo_panel.parquet")
+    if source == "moomoo":
+        if not moomoo_file.exists():
+            # Attempt auto-fetch baseline panel
+            try:
+                from stockmodel.data.moomoo_loader import MoomooMarketLoader
+                loader = MoomooMarketLoader(host=os.environ.get("MOOMOO_HOST", "192.168.1.20"))
+                ok, _ = loader.check_connection()
+                if ok:
+                    loader.save_panel(output_path=moomoo_file, days=max(days, 60))
+                loader.close()
+            except Exception:
+                pass
+
+        if not moomoo_file.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Moomoo live data panel not found. Please click 'Sync Live Data' to fetch from stockserver.",
+            )
+
+        raw_df = MarketDataLoader.load_file(moomoo_file)
+        unique_dates = sorted(raw_df["date"].unique().to_list())
+        if len(unique_dates) > days:
+            cutoff = unique_dates[-days]
+            raw_df = raw_df.filter(pl.col("date") >= cutoff)
+    else:
+        gen = SyntheticMarketGenerator(seed=seed)
+        raw_df = gen.generate(n_days=days)
+
     target_df = compute_volatility_adjusted_target(raw_df, cfg.target)
     pipeline = FeaturePipeline(cfg.feature)
     panel_df, feat_cols = pipeline.build_features(target_df)
@@ -123,11 +151,12 @@ async def get_status():
 async def get_rank(
     days: int = Query(252, ge=60, le=1000),
     seed: int = Query(42, ge=0),
+    source: str = Query("synthetic", pattern="^(synthetic|moomoo)$"),
     allow_short: bool = Query(True),
 ):
     """Generates cross-sectional decile rankings with inverse-ATR weighting."""
     try:
-        pdf, feat_cols, cfg = _get_panel(days=days, seed=seed)
+        pdf, feat_cols, cfg = _get_panel(days=days, seed=seed, source=source)
 
         valid = pdf.dropna(subset=feat_cols + ["target"])
         if len(valid) < 50:
@@ -192,6 +221,7 @@ async def get_rank(
         net_exposure = long_weights - short_weights
 
         return {
+            "source": source,
             "as_of_date": str(latest_date),
             "summary": {
                 "long_positions": sum(1 for a in allocations if a["type"] == "LONG"),
@@ -212,12 +242,13 @@ async def get_rank(
 async def get_backtest(
     days: int = Query(300, ge=100, le=1000),
     seed: int = Query(42, ge=0),
+    source: str = Query("synthetic", pattern="^(synthetic|moomoo)$"),
     rebalance_freq: Optional[int] = Query(None, ge=1, le=20),
     inertia_pct: Optional[float] = Query(None, ge=0.1, le=0.9),
 ):
     """Executes full backtest simulation and returns performance tearsheet & time-series."""
     try:
-        pdf, feat_cols, cfg = _get_panel(days=days, seed=seed)
+        pdf, feat_cols, cfg = _get_panel(days=days, seed=seed, source=source)
 
         if rebalance_freq is not None:
             cfg.execution.rebalance_frequency_days = rebalance_freq
@@ -260,6 +291,7 @@ async def get_backtest(
             })
 
         return {
+            "source": source,
             "metrics": {
                 "total_return_pct": round(metrics.total_return * 100, 2),
                 "annualized_return_pct": round(metrics.annualized_return * 100, 2),
@@ -289,10 +321,11 @@ async def get_backtest(
 async def get_check_gate(
     days: int = Query(300, ge=100, le=1000),
     seed: int = Query(42, ge=0),
+    source: str = Query("synthetic", pattern="^(synthetic|moomoo)$"),
 ):
     """Executes purged walk-forward cross-validation and complexity gating."""
     try:
-        pdf, feat_cols, cfg = _get_panel(days=days, seed=seed)
+        pdf, feat_cols, cfg = _get_panel(days=days, seed=seed, source=source)
         gator = ComplexityGator(cfg)
         result = gator.evaluate(pdf, feat_cols, target_col="target")
 
@@ -310,6 +343,7 @@ async def get_check_gate(
             })
 
         return {
+            "source": source,
             "passed": bool(result.passed),
             "summary": {
                 "gbdt_mean_ic": round(result.lgb_mean_ic, 4),
@@ -333,10 +367,11 @@ async def get_check_gate(
 async def get_ablation(
     days: int = Query(252, ge=100, le=756),
     seed: int = Query(42, ge=0),
+    source: str = Query("synthetic", pattern="^(synthetic|moomoo)$"),
 ):
     """Runs systematic leave-one-feature-out ablation study."""
     try:
-        pdf, feat_cols, cfg = _get_panel(days=days, seed=seed)
+        pdf, feat_cols, cfg = _get_panel(days=days, seed=seed, source=source)
         ablation = FeatureAblationStudy(cfg)
         results = ablation.run_study(pdf, feat_cols)
 
@@ -364,9 +399,85 @@ async def get_ablation(
             })
 
         output.sort(key=lambda x: x["ic_delta"], reverse=True)
-        return {"features": output}
+        return {"source": source, "features": output}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/moomoo/status")
+async def get_moomoo_status(host: str = "192.168.1.20", port: int = 11111):
+    """Checks connectivity to Moomoo OpenD on stockserver and cached panel telemetry."""
+    from stockmodel.data.moomoo_loader import MoomooMarketLoader
+    loader = MoomooMarketLoader(host=host, port=port)
+    ok, msg = loader.check_connection()
+    loader.close()
+
+    moomoo_file = Path("data/moomoo_panel.parquet")
+    cached = moomoo_file.exists()
+    panel_info = {
+        "cached": cached,
+        "path": str(moomoo_file.resolve()) if cached else None,
+        "size_kb": round(moomoo_file.stat().st_size / 1024, 1) if cached else 0,
+        "rows": 0,
+        "symbols": 0,
+        "start_date": None,
+        "end_date": None,
+        "last_modified": None,
+    }
+    if cached:
+        try:
+            df = pl.read_parquet(moomoo_file)
+            panel_info["rows"] = df.height
+            panel_info["symbols"] = df["symbol"].n_unique()
+            dates = df["date"].unique().sort().to_list()
+            if dates:
+                panel_info["start_date"] = str(dates[0])
+                panel_info["end_date"] = str(dates[-1])
+            mtime = moomoo_file.stat().st_mtime
+            panel_info["last_modified"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime))
+        except Exception:
+            pass
+
+    return {
+        "connected": ok,
+        "message": msg,
+        "host": host,
+        "port": port,
+        "panel": panel_info,
+    }
+
+
+@app.post("/api/moomoo/sync")
+async def sync_moomoo_data(
+    days: int = Query(252, ge=20, le=504),
+    host: str = Query("192.168.1.20"),
+    port: int = Query(11111),
+    symbols: Optional[str] = Query(None),
+):
+    """Syncs live data from Moomoo OpenD into data/moomoo_panel.parquet."""
+    from stockmodel.data.moomoo_loader import MoomooMarketLoader
+    tickers = [s.strip().upper() for s in symbols.split(",")] if symbols else None
+    loader = MoomooMarketLoader(host=host, port=port, universe=tickers)
+    ok, msg = loader.check_connection()
+    if not ok:
+        loader.close()
+        raise HTTPException(status_code=503, detail=f"OpenD unreachable at {host}:{port}: {msg}")
+
+    out_path = Path("data/moomoo_panel.parquet")
+    saved_path = str(loader.save_panel(output_path=out_path, days=days, universe=tickers))
+    loader.close()
+    _PANEL_CACHE.clear()
+
+    # Read back summary
+    df = pl.read_parquet(out_path)
+    return {
+        "status": "success",
+        "message": f"Successfully ingested {df.height} records across {df['symbol'].n_unique()} assets from Moomoo OpenD.",
+        "path": saved_path,
+        "days": days,
+        "rows": df.height,
+        "symbols": df["symbol"].n_unique(),
+    }
 
 
 # Static file serving

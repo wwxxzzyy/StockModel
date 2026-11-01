@@ -67,16 +67,107 @@ class StockModelApp {
     getParams() {
         const days = parseInt(document.getElementById('global-days-select')?.value || 252);
         const seed = parseInt(document.getElementById('global-seed-input')?.value || 42);
-        return { days, seed };
+        const source = document.getElementById('global-source-select')?.value || 'synthetic';
+        return { days, seed, source };
+    }
+
+    onSourceChange() {
+        const { source } = this.getParams();
+        this.showToast(`Switched active data feed to: ${source === 'moomoo' ? 'Moomoo OpenD (stockserver)' : 'Synthetic Generator'}`);
+        this.refreshAll();
     }
 
     async init() {
         try {
             await this.loadTelemetry();
+            await this.checkMoomooStatus();
             await this.loadRank();
         } catch (err) {
             console.error('Initialization error:', err);
             this.showToast('Error connecting to StockModel backend: ' + err.message);
+        }
+    }
+
+    async checkMoomooStatus() {
+        try {
+            const res = await fetch(`${API_BASE}/api/moomoo/status`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const ind = document.getElementById('moomoo-indicator');
+            const txt = document.getElementById('moomoo-status-text');
+
+            if (data.connected) {
+                if (ind) ind.className = 'status-indicator online';
+                if (txt) {
+                    if (data.panel?.cached) {
+                        txt.textContent = `Online (${data.panel.symbols} assets, ${data.panel.rows} bars)`;
+                    } else {
+                        txt.textContent = 'Online (Ready to sync)';
+                    }
+                }
+            } else {
+                if (ind) ind.className = 'status-indicator offline';
+                if (txt) txt.textContent = 'Disconnected';
+            }
+
+            // Update modal stats if open
+            const mStatus = document.getElementById('modal-moomoo-status');
+            const mRecords = document.getElementById('modal-panel-records');
+            const mDates = document.getElementById('modal-panel-dates');
+            const mMtime = document.getElementById('modal-panel-mtime');
+
+            if (mStatus) mStatus.textContent = data.connected ? 'Online (Connected)' : 'Offline (Check stockserver)';
+            if (mRecords) mRecords.textContent = data.panel?.cached ? `${data.panel.rows.toLocaleString()} bars across ${data.panel.symbols} assets` : 'No panel saved yet';
+            if (mDates) mDates.textContent = data.panel?.cached && data.panel.start_date ? `${data.panel.start_date} -> ${data.panel.end_date}` : '--';
+            if (mMtime) mMtime.textContent = data.panel?.cached && data.panel.last_modified ? data.panel.last_modified : 'Never';
+        } catch (e) {
+            console.debug('Moomoo status check failed:', e);
+        }
+    }
+
+    showMoomooModal() {
+        const modal = document.getElementById('modal-moomoo');
+        if (modal) modal.classList.remove('hidden');
+        this.checkMoomooStatus();
+    }
+
+    hideMoomooModal() {
+        const modal = document.getElementById('modal-moomoo');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    async syncMoomooFromModal() {
+        const btn = document.getElementById('btn-modal-sync');
+        const btnText = document.getElementById('modal-sync-btn-text');
+        const days = parseInt(document.getElementById('sync-days-input')?.value || 252);
+        const tickers = document.getElementById('sync-tickers-input')?.value.trim();
+
+        if (btn) btn.classList.add('loading');
+        if (btnText) btnText.textContent = 'Ingesting from OpenD...';
+        this.showToast('Fetching live market bars, GEX, and short interest from Moomoo stockserver...');
+
+        try {
+            let url = `${API_BASE}/api/moomoo/sync?days=${days}`;
+            if (tickers) url += `&symbols=${encodeURIComponent(tickers)}`;
+            const res = await fetch(url, { method: 'POST' });
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.detail || `Sync failed (${res.status})`);
+            }
+            const data = await res.json();
+            this.showToast(data.message || 'Moomoo sync completed successfully!');
+            await this.checkMoomooStatus();
+            this.hideMoomooModal();
+            // Automatically switch to moomoo feed and refresh
+            const srcSelect = document.getElementById('global-source-select');
+            if (srcSelect) srcSelect.value = 'moomoo';
+            await this.refreshAll();
+        } catch (err) {
+            console.error('Moomoo sync error:', err);
+            this.showToast('Error syncing Moomoo data: ' + err.message, 5000);
+        } finally {
+            if (btn) btn.classList.remove('loading');
+            if (btnText) btnText.textContent = 'Sync Live Market Data';
         }
     }
 
@@ -116,18 +207,18 @@ class StockModelApp {
     // =========================================================================
 
     async loadRank() {
-        const { days, seed } = this.getParams();
+        const { days, seed, source } = this.getParams();
         const tbody = document.getElementById('table-allocations-body');
         if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="loading-cell">Computing LightGBM decile rankings & volatility weights...</td></tr>';
 
-        const res = await fetch(`${API_BASE}/api/rank?days=${days}&seed=${seed}&allow_short=true`);
+        const res = await fetch(`${API_BASE}/api/rank?days=${days}&seed=${seed}&source=${source}&allow_short=true`);
         if (!res.ok) throw new Error(`Rank API failed (${res.status})`);
         const data = await res.json();
 
         this.currentAllocations = data.allocations || [];
 
         // Update header & metric cards
-        document.getElementById('rank-as-of').textContent = `As of: ${data.as_of_date}`;
+        document.getElementById('rank-as-of').textContent = `As of: ${data.as_of_date} (${source === 'moomoo' ? 'Live Moomoo' : 'Synthetic'})`;
         document.getElementById('metric-gross-exposure').textContent = `${data.summary.gross_exposure_pct}%`;
         document.getElementById('metric-net-exposure').textContent = `${data.summary.net_exposure_pct > 0 ? '+' : ''}${data.summary.net_exposure_pct}%`;
         document.getElementById('metric-long-count').textContent = `${data.summary.long_positions} Longs`;
@@ -267,10 +358,10 @@ class StockModelApp {
     // =========================================================================
 
     async loadBacktest() {
-        const { days, seed } = this.getParams();
+        const { days, seed, source } = this.getParams();
         this.showToast('Simulating walk-forward backtest with friction...');
 
-        const res = await fetch(`${API_BASE}/api/backtest?days=${days}&seed=${seed}`);
+        const res = await fetch(`${API_BASE}/api/backtest?days=${days}&seed=${seed}&source=${source}`);
         if (!res.ok) throw new Error(`Backtest API failed (${res.status})`);
         const data = await res.json();
 
@@ -427,11 +518,11 @@ class StockModelApp {
     // =========================================================================
 
     async loadGating() {
-        const { days, seed } = this.getParams();
+        const { days, seed, source } = this.getParams();
         const tbody = document.getElementById('table-folds-body');
         if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="loading-cell">Evaluating LightGBM vs ElasticNet across purged walk-forward folds...</td></tr>';
 
-        const res = await fetch(`${API_BASE}/api/check-gate?days=${days}&seed=${seed}`);
+        const res = await fetch(`${API_BASE}/api/check-gate?days=${days}&seed=${seed}&source=${source}`);
         if (!res.ok) throw new Error(`Gating API failed (${res.status})`);
         const data = await res.json();
         this.gatingLoaded = true;
@@ -533,11 +624,11 @@ class StockModelApp {
     // =========================================================================
 
     async loadAblation() {
-        const { days, seed } = this.getParams();
+        const { days, seed, source } = this.getParams();
         const tbody = document.getElementById('table-ablation-body');
         if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="loading-cell">Running systematic leave-one-feature-out IC delta analysis...</td></tr>';
 
-        const res = await fetch(`${API_BASE}/api/ablation?days=${Math.min(days, 300)}&seed=${seed}`);
+        const res = await fetch(`${API_BASE}/api/ablation?days=${Math.min(days, 300)}&seed=${seed}&source=${source}`);
         if (!res.ok) throw new Error(`Ablation API failed (${res.status})`);
         const data = await res.json();
         this.ablationLoaded = true;

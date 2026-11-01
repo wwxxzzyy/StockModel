@@ -142,8 +142,13 @@ def cmd_ablation(args):
 def cmd_rank(args):
     """Outputs current portfolio rankings and decile allocations."""
     cfg = SystemConfig()
-    gen = SyntheticMarketGenerator(seed=args.seed)
-    raw_df = gen.generate(n_days=args.days)
+    if getattr(args, "data", None):
+        print(f"Loading data from: {args.data}")
+        raw_df = MarketDataLoader.load_file(args.data)
+    else:
+        gen = SyntheticMarketGenerator(seed=args.seed)
+        raw_df = gen.generate(n_days=args.days)
+
     target_df = compute_volatility_adjusted_target(raw_df, cfg.target)
     pipeline = FeaturePipeline(cfg.feature)
     panel_df, feat_cols = pipeline.build_features(target_df)
@@ -175,6 +180,26 @@ def cmd_rank(args):
     for sym, w in sorted(weights.items(), key=lambda x: x[1], reverse=True):
         pos_type = "LONG" if w > 0 else "SHORT"
         print(f"{sym:<10} {w:>9.2%} {pos_type:>8}")
+
+
+def cmd_fetch_moomoo(args):
+    """Fetches market data from Moomoo OpenD on stockserver."""
+    from stockmodel.data.moomoo_loader import MoomooMarketLoader
+    tickers = [s.strip().upper() for s in args.tickers.split(",")] if getattr(args, "tickers", None) else None
+    print("=" * 70)
+    print(f"StockModel: Ingesting Live Market Data from Moomoo OpenD ({args.host}:{args.port})...")
+    if tickers:
+        print(f"Target Universe: {len(tickers)} symbols ({', '.join(tickers[:10])}...)")
+    print("=" * 70)
+    loader = MoomooMarketLoader(host=args.host, port=args.port, universe=tickers)
+    ok, msg = loader.check_connection()
+    if not ok:
+        print(f"[ERROR] {msg}")
+        sys.exit(1)
+    print(f"[SUCCESS] {msg}")
+    saved_path = loader.save_panel(output_path=args.output, days=args.days, universe=tickers)
+    print(f"\n[DONE] Ingestion complete. Market panel saved to: {saved_path}")
+    loader.close()
 
 
 def cmd_serve(args):
@@ -213,6 +238,15 @@ def main():
     p_rk = subparsers.add_parser("rank", help="Generate live decile allocations")
     p_rk.add_argument("--days", type=int, default=252, help="Synthetic trading days (default: 252)")
     p_rk.add_argument("--seed", type=int, default=42, help="Random seed")
+    p_rk.add_argument("--data", type=str, default=None, help="Path to market data panel (parquet/csv)")
+
+    # fetch-moomoo
+    p_mm = subparsers.add_parser("fetch-moomoo", help="Fetch market data from Moomoo OpenD")
+    p_mm.add_argument("--host", type=str, default="192.168.1.20", help="Moomoo OpenD host (default: 192.168.1.20)")
+    p_mm.add_argument("--port", type=int, default=11111, help="Moomoo OpenD port (default: 11111)")
+    p_mm.add_argument("--days", type=int, default=252, help="Days of history to fetch (default: 252)")
+    p_mm.add_argument("--tickers", type=str, default=None, help="Comma-separated symbols (e.g. AAPL,MSFT,NVDA)")
+    p_mm.add_argument("--output", type=str, default="data/moomoo_panel.parquet", help="Output parquet path")
 
     # serve
     p_srv = subparsers.add_parser("serve", help="Start web dashboard and API service")
@@ -228,6 +262,8 @@ def main():
         cmd_ablation(args)
     elif args.command == "rank":
         cmd_rank(args)
+    elif args.command == "fetch-moomoo":
+        cmd_fetch_moomoo(args)
     elif args.command == "serve":
         cmd_serve(args)
     else:

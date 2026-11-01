@@ -48,6 +48,45 @@ def test_api_check_gate():
     assert "folds" in data
 
 
+def test_api_ablation():
+    response = client.get("/api/ablation?days=120&seed=42&source=synthetic")
+    assert response.status_code == 200
+    data = response.json()
+    assert "features" in data
+    assert len(data["features"]) == 7
+
+
+def test_api_moomoo_status():
+    response = client.get("/api/moomoo/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "connected" in data
+    assert "panel" in data
+    assert "host" in data
+    assert "port" in data
+
+
+def test_api_rank_moomoo():
+    response = client.get("/api/rank?days=120&source=moomoo&allow_short=true")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["source"] == "moomoo"
+    assert "as_of_date" in data
+    assert len(data["allocations"]) > 0
+
+
+def test_api_backtest_moomoo():
+    response = client.get("/api/backtest?days=120&source=moomoo")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["source"] == "moomoo"
+    assert "metrics" in data
+    assert "daily_curve" in data
+    assert len(data["daily_curve"]) > 50
+
+
 def test_api_index():
     response = client.get("/")
     assert response.status_code == 200
+
+

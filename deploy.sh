@@ -178,8 +178,8 @@ remote_sudo "
         rsync git python3-pip python3-venv python3-fastapi python3-uvicorn python3-httpx \
         python3-numpy python3-scipy python3-pandas python3-sklearn >/dev/null
 
-    # Configure Polars compatibility runtime and CPU feature bypass
-    pip install --break-system-packages --quiet 'polars[rtcompat]' >/dev/null 2>&1 || true
+    # Configure Polars compatibility runtime and Moomoo SDK
+    pip install --break-system-packages --quiet 'polars[rtcompat]' 'moomoo-api' >/dev/null 2>&1 || true
     
     # Ensure POLARS_SKIP_CPU_CHECK is persisted
     grep -q 'POLARS_SKIP_CPU_CHECK' /etc/environment || echo 'POLARS_SKIP_CPU_CHECK=1' >> /etc/environment
