@@ -1,0 +1,53 @@
+"""
+Unit and integration tests for StockModel Web UI and API.
+"""
+
+from fastapi.testclient import TestClient
+from stockmodel.web.app import app
+
+client = TestClient(app)
+
+
+def test_api_status():
+    response = client.get("/api/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "online"
+    assert "cpu_count" in data
+    assert "config" in data
+    assert len(data["config"]["core_features"]) == 7
+
+
+def test_api_rank():
+    response = client.get("/api/rank?days=100&seed=42&allow_short=true")
+    assert response.status_code == 200
+    data = response.json()
+    assert "as_of_date" in data
+    assert "summary" in data
+    assert "allocations" in data
+    assert data["summary"]["long_positions"] > 0
+    assert data["summary"]["short_positions"] > 0
+
+
+def test_api_backtest():
+    response = client.get("/api/backtest?days=120&seed=42")
+    assert response.status_code == 200
+    data = response.json()
+    assert "metrics" in data
+    assert "daily_curve" in data
+    assert len(data["daily_curve"]) > 50
+    assert "sharpe_ratio" in data["metrics"]
+
+
+def test_api_check_gate():
+    response = client.get("/api/check-gate?days=120&seed=42")
+    assert response.status_code == 200
+    data = response.json()
+    assert "passed" in data
+    assert "summary" in data
+    assert "folds" in data
+
+
+def test_api_index():
+    response = client.get("/")
+    assert response.status_code == 200

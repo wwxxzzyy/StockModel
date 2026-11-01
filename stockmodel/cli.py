@@ -177,6 +177,17 @@ def cmd_rank(args):
         print(f"{sym:<10} {w:>9.2%} {pos_type:>8}")
 
 
+def cmd_serve(args):
+    """Starts the StockModel Web UI and API server."""
+    import uvicorn
+    from stockmodel.web.app import app
+
+    print("=" * 70)
+    print(f"StockModel: Starting Professional Web Dashboard on {args.host}:{args.port}...")
+    print("=" * 70)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
 def main():
     parser = argparse.ArgumentParser(description="StockModel Quantitative Swing Engine")
     subparsers = parser.add_subparsers(dest="command", help="Sub-commands")
@@ -203,6 +214,11 @@ def main():
     p_rk.add_argument("--days", type=int, default=252, help="Synthetic trading days (default: 252)")
     p_rk.add_argument("--seed", type=int, default=42, help="Random seed")
 
+    # serve
+    p_srv = subparsers.add_parser("serve", help="Start web dashboard and API service")
+    p_srv.add_argument("--host", type=str, default="0.0.0.0", help="Host address (default: 0.0.0.0)")
+    p_srv.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+
     args = parser.parse_args()
     if args.command == "check-gate":
         cmd_check_gate(args)
@@ -212,6 +228,8 @@ def main():
         cmd_ablation(args)
     elif args.command == "rank":
         cmd_rank(args)
+    elif args.command == "serve":
+        cmd_serve(args)
     else:
         parser.print_help()
 

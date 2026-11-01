@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="StockModel - Quantitative Swing Behavior Model & Alpha Research Platform. Cross-sectional LightGBM with ElasticNet Complexity Gating.">
+    <title>StockModel | Quantitative Alpha & Swing Engine</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark-theme">
+    <div class="app-layout">
+        <!-- Top Application Header -->
+        <header class="top-nav">
+            <div class="nav-brand">
+                <div class="logo-mark">
+                    <span class="logo-pulse"></span>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                        <polyline points="16 7 22 7 22 13"></polyline>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-title">StockModel <span class="badge-version">v0.1.0</span></span>
+                    <span class="brand-subtitle">Quantitative Swing Alpha Platform (H=15d)</span>
+                </div>
+            </div>
+
+            <!-- Global Horizon & Quick Controls -->
+            <div class="header-controls">
+                <div class="control-group">
+                    <label for="global-days-select">Horizon Panel</label>
+                    <select id="global-days-select" class="select-input">
+                        <option value="150">150 Days (~6 Mos)</option>
+                        <option value="252" selected>252 Days (1 Year)</option>
+                        <option value="504">504 Days (2 Years)</option>
+                        <option value="756">756 Days (3 Years)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="global-seed-input">Random Seed</label>
+                    <input id="global-seed-input" type="number" class="number-input" value="42" min="1" max="9999">
+                </div>
+
+                <button id="btn-run-all" class="btn btn-primary" onclick="app.refreshAll()">
+                    <svg class="spin-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+                    </svg>
+                    <span>Run Engine</span>
+                </button>
+            </div>
+
+            <!-- Server Telemetry Status -->
+            <div class="telemetry-pill" id="telemetry-pill">
+                <span class="status-indicator online"></span>
+                <div class="telemetry-info">
+                    <span class="server-name" id="server-hostname">modelserver</span>
+                    <span class="server-latency" id="server-ping">Connected</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="main-content">
+            <!-- Navigation Tabs -->
+            <nav class="sub-nav" role="tablist">
+                <button class="nav-tab active" id="tab-rank" data-target="panel-rank" role="tab">
+                    <span class="tab-icon">📊</span>
+                    <span>Live Allocations</span>
+                </button>
+                <button class="nav-tab" id="tab-backtest" data-target="panel-backtest" role="tab">
+                    <span class="tab-icon">📈</span>
+                    <span>Backtest Simulation</span>
+                </button>
+                <button class="nav-tab" id="tab-gating" data-target="panel-gating" role="tab">
+                    <span class="tab-icon">🛡️</span>
+                    <span>Complexity Gating</span>
+                </button>
+                <button class="nav-tab" id="tab-ablation" data-target="panel-ablation" role="tab">
+                    <span class="tab-icon">🔬</span>
+                    <span>Feature Ablation</span>
+                </button>
+                <button class="nav-tab" id="tab-telemetry" data-target="panel-telemetry" role="tab">
+                    <span class="tab-icon">⚙️</span>
+                    <span>System Specs</span>
+                </button>
+            </nav>
+
+            <!-- TAB 1: LIVE ALLOCATIONS -->
+            <section id="panel-rank" class="tab-panel active" role="tabpanel">
+                <div class="panel-header">
+                    <div>
+                        <h1 class="panel-title">Cross-Sectional Decile Allocations</h1>
+                        <p class="panel-desc">Top decile long basket vs bottom decile short basket with inverse-ATR volatility parity weighting and earnings blackouts.</p>
+                    </div>
+                    <div class="panel-actions">
+                        <span class="as-of-badge" id="rank-as-of">As of: Loading...</span>
+                        <button class="btn btn-secondary btn-sm" onclick="app.exportAllocationsCSV()">Export CSV</button>
+                    </div>
+                </div>
+
+                <!-- Metrics Overview Cards -->
+                <div class="metric-grid-4">
+                    <div class="metric-card">
+                        <span class="card-label">Gross Exposure</span>
+                        <div class="card-value-group">
+                            <span class="card-value highlight-cyan" id="metric-gross-exposure">--</span>
+                        </div>
+                        <span class="card-hint">Total invested capital</span>
+                    </div>
+
+                    <div class="metric-card">
+                        <span class="card-label">Net Dollar Exposure</span>
+                        <div class="card-value-group">
+                            <span class="card-value" id="metric-net-exposure">--</span>
+                        </div>
+                        <span class="card-hint">Dollar neutrality offset</span>
+                    </div>
+
+                    <div class="metric-card">
+                        <span class="card-label">Long Candidates</span>
+                        <div class="card-value-group">
+                            <span class="card-value text-emerald" id="metric-long-count">--</span>
+                            <span class="card-subvalue text-emerald" id="metric-long-weight">--</span>
+                        </div>
+                        <span class="card-hint">Top decile score ranking</span>
+                    </div>
+
+                    <div class="metric-card">
+                        <span class="card-label">Short Candidates</span>
+                        <div class="card-value-group">
+                            <span class="card-value text-rose" id="metric-short-count">--</span>
+                            <span class="card-subvalue text-rose" id="metric-short-weight">--</span>
+                        </div>
+                        <span class="card-hint">Bottom decile score ranking</span>
+                    </div>
+                </div>
+
+                <!-- Allocations Chart & Breakdown -->
+                <div class="content-split-2">
+                    <div class="card chart-container-card">
+                        <div class="card-head">
+                            <h2 class="card-title">Portfolio Weight Allocation (% NAV)</h2>
+                            <span class="card-badge">Inverse-ATR Scaled</span>
+                        </div>
+                        <div class="chart-wrapper">
+                            <canvas id="chart-allocations" height="260"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-head">
+                            <h2 class="card-title">Position Sizing & Risk Discipline</h2>
+                        </div>
+                        <div class="policy-list">
+                            <div class="policy-item">
+                                <div class="policy-bullet cyan"></div>
+                                <div class="policy-content">
+                                    <strong>Volatility Equalization:</strong>
+                                    <span>Inverse-ATR realized 14d volatility equalizes variance contribution across small and large swings.</span>
+                                </div>
+                            </div>
+                            <div class="policy-item">
+                                <div class="policy-bullet amber"></div>
+                                <div class="policy-content">
+                                    <strong>Earnings Blackout Protection:</strong>
+                                    <span>New entries blocked &le; 3 trading days prior to quarterly announcements; positions trimmed 50% &le; 48h prior.</span>
+                                </div>
+                            </div>
+                            <div class="policy-item">
+                                <div class="policy-bullet purple"></div>
+                                <div class="policy-content">
+                                    <strong>Turnover Inertia Band:</strong>
+                                    <span>Existing positions retained on rebalance unless relative rank falls below the 60th percentile.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detailed Allocations Table -->
+                <div class="card table-card">
+                    <div class="card-head">
+                        <h2 class="card-title">Active Universe Asset Rankings</h2>
+                        <div class="table-filters">
+                            <button class="filter-btn active" data-filter="ALL" onclick="app.filterAllocations('ALL')">All</button>
+                            <button class="filter-btn" data-filter="LONG" onclick="app.filterAllocations('LONG')">Longs Only</button>
+                            <button class="filter-btn" data-filter="SHORT" onclick="app.filterAllocations('SHORT')">Shorts Only</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table" id="table-allocations">
+                            <thead>
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th>Type</th>
+                                    <th>Weight</th>
+                                    <th>Rank Score</th>
+                                    <th>Last Close</th>
+                                    <th>ATR (14d)</th>
+                                    <th>Days to Earnings</th>
+                                    <th>Status</th>
+                                    <th>Sector</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-allocations-body">
+                                <tr><td colspan="9" class="loading-cell">Loading asset rankings...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: BACKTEST SIMULATION -->
+            <section id="panel-backtest" class="tab-panel" role="tabpanel">
+                <div class="panel-header">
+                    <div>
+                        <h1 class="panel-title">Walk-Forward Simulation Tearsheet</h1>
+                        <p class="panel-desc">Full historical execution under 8–15 bps slippage friction, 100 bps short borrow drag, and rebalance inertia bands.</p>
+                    </div>
+                    <div class="panel-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="app.exportBacktestCSV()">Export Returns CSV</button>
+                    </div>
+                </div>
+
+                <!-- Tear-Sheet High-Level Performance Grid -->
+                <div class="metric-grid-6">
+                    <div class="metric-card">
+                        <span class="card-label">Annualized Return</span>
+                        <span class="card-value text-emerald" id="bt-ann-return">--</span>
+                        <span class="card-hint" id="bt-total-return">Total: --</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="card-label">Sharpe Ratio</span>
+                        <span class="card-value highlight-cyan" id="bt-sharpe">--</span>
+                        <span class="card-hint">Hurdle: &ge; 1.50</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="card-label">Sortino Ratio</span>
+                        <span class="card-value text-emerald" id="bt-sortino">--</span>
+                        <span class="card-hint">Downside Risk Ratio</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="card-label">Max Drawdown</span>
+                        <span class="card-value text-rose" id="bt-max-dd">--</span>
+                        <span class="card-hint" id="bt-calmar">Calmar: --</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="card-label">Annualized Turnover</span>
+                        <span class="card-value" id="bt-turnover">--</span>
+                        <span class="card-hint" id="bt-friction">Drag: -- bps</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="card-label">Strategy Alpha</span>
+                        <span class="card-value text-emerald" id="bt-alpha">--</span>
+                        <span class="card-hint" id="bt-benchmark">Bmk: --</span>
+                    </div>
+                </div>
+
+                <!-- Equity Curve Graph -->
+                <div class="card chart-container-card">
+                    <div class="card-head">
+                        <div class="card-title-group">
+                            <h2 class="card-title">Portfolio NAV Equity Curve vs Benchmark</h2>
+                            <span class="card-subtitle">Compounded performance starting NAV $1,000,000</span>
+                        </div>
+                        <div class="chart-legend-custom">
+                            <span class="legend-item"><span class="dot emerald"></span> Strategy NAV</span>
+                            <span class="legend-item"><span class="dot gray"></span> Benchmark Buy & Hold</span>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="chart-equity" height="280"></canvas>
+                    </div>
+                </div>
+
+                <!-- Underwater Drawdown Graph -->
+                <div class="card chart-container-card">
+                    <div class="card-head">
+                        <h2 class="card-title">Underwater Portfolio Drawdown Profile (%)</h2>
+                        <span class="card-badge">Friction Adjusted</span>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="chart-drawdown" height="150"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: COMPLEXITY GATING -->
+            <section id="panel-gating" class="tab-panel" role="tabpanel">
+                <div class="panel-header">
+                    <div>
+                        <h1 class="panel-title">Purged Walk-Forward Complexity Gating</h1>
+                        <p class="panel-desc">Empirical gatekeeper ensuring non-linear GBDTs systematically outperform linear ElasticNet baselines before production deployment.</p>
+                    </div>
+                    <div id="gating-verdict-badge" class="verdict-badge pending">Evaluating...</div>
+                </div>
+
+                <!-- Hurdle Checklist Banner -->
+                <div class="gating-hurdles-grid">
+                    <div class="hurdle-card" id="hurdle-ic-card">
+                        <div class="hurdle-status-icon" id="hurdle-ic-icon">⏳</div>
+                        <div class="hurdle-info">
+                            <span class="hurdle-title">OOS Spearman Rank IC</span>
+                            <span class="hurdle-metric" id="gating-lgb-ic">--</span>
+                            <span class="hurdle-threshold">Hurdle Requirement: &ge; 0.035</span>
+                        </div>
+                    </div>
+
+                    <div class="hurdle-card" id="hurdle-icir-card">
+                        <div class="hurdle-status-icon" id="hurdle-icir-icon">⏳</div>
+                        <div class="hurdle-info">
+                            <span class="hurdle-title">Information Coefficient IR</span>
+                            <span class="hurdle-metric" id="gating-lgb-icir">--</span>
+                            <span class="hurdle-threshold">Hurdle Requirement: &ge; 0.75</span>
+                        </div>
+                    </div>
+
+                    <div class="hurdle-card" id="hurdle-baseline-card">
+                        <div class="hurdle-status-icon" id="hurdle-baseline-icon">⏳</div>
+                        <div class="hurdle-info">
+                            <span class="hurdle-title">GBDT vs Linear Baseline Delta</span>
+                            <span class="hurdle-metric" id="gating-ic-delta">--</span>
+                            <span class="hurdle-threshold" id="gating-enet-ic">ElasticNet Baseline: --</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fold Breakdown Chart -->
+                <div class="card chart-container-card">
+                    <div class="card-head">
+                        <h2 class="card-title">Out-of-Sample IC Across Purged Folds (GBDT vs ElasticNet)</h2>
+                        <span class="card-badge">Embargo Buffer: H + 5 days</span>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="chart-gating-folds" height="220"></canvas>
+                    </div>
+                </div>
+
+                <!-- Fold Table -->
+                <div class="card table-card">
+                    <div class="card-head">
+                        <h2 class="card-title">Cross-Validation Folds Execution Log</h2>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Fold</th>
+                                    <th>Training Window</th>
+                                    <th>Out-of-Sample Test Window</th>
+                                    <th>LightGBM IC</th>
+                                    <th>ElasticNet IC</th>
+                                    <th>Alpha Delta</th>
+                                    <th>GBDT Outperformed</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-folds-body">
+                                <tr><td colspan="7" class="loading-cell">Loading fold evaluations...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: FEATURE ABLATION -->
+            <section id="panel-ablation" class="tab-panel" role="tabpanel">
+                <div class="panel-header">
+                    <div>
+                        <h1 class="panel-title">Systematic Feature Ablation Study</h1>
+                        <p class="panel-desc">Leave-one-feature-out analysis measuring marginal IC contribution of each component to prune dead weight and prevent noise fitting.</p>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="app.loadAblation()">Re-run Ablation</button>
+                </div>
+
+                <!-- Ablation Chart -->
+                <div class="card chart-container-card">
+                    <div class="card-head">
+                        <h2 class="card-title">Marginal IC Contribution per Alpha Feature (&Delta; IC)</h2>
+                        <span class="card-badge">Positive &Delta; indicates predictive power</span>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="chart-ablation" height="250"></canvas>
+                    </div>
+                </div>
+
+                <!-- Feature Table -->
+                <div class="card table-card">
+                    <div class="card-head">
+                        <h2 class="card-title">Core Feature Pipeline Specifications</h2>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Feature Name</th>
+                                    <th>Category</th>
+                                    <th>IC With Feature</th>
+                                    <th>IC Without Feature</th>
+                                    <th>Marginal IC Delta</th>
+                                    <th>Engine Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-ablation-body">
+                                <tr><td colspan="6" class="loading-cell">Loading ablation analysis...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 5: SYSTEM SPECS & TELEMETRY -->
+            <section id="panel-telemetry" class="tab-panel" role="tabpanel">
+                <div class="panel-header">
+                    <div>
+                        <h1 class="panel-title">Deployment Infrastructure & Model Settings</h1>
+                        <p class="panel-desc">Active node hardware, runtime dependencies, and quantitative execution parameters.</p>
+                    </div>
+                </div>
+
+                <div class="content-split-2">
+                    <div class="card">
+                        <div class="card-head">
+                            <h2 class="card-title">Server Telemetry (modelserver)</h2>
+                            <span class="status-indicator online"></span>
+                        </div>
+                        <div class="spec-list">
+                            <div class="spec-item"><span class="spec-label">Host Node</span><span class="spec-value" id="spec-host">modelserver.lan</span></div>
+                            <div class="spec-item"><span class="spec-label">Internal IP</span><span class="spec-value">192.168.1.36</span></div>
+                            <div class="spec-item"><span class="spec-label">Operating System</span><span class="spec-value" id="spec-os">Debian Linux</span></div>
+                            <div class="spec-item"><span class="spec-label">Python Environment</span><span class="spec-value" id="spec-python">Python 3.13.5 (System Native)</span></div>
+                            <div class="spec-item"><span class="spec-label">Logical CPU Cores</span><span class="spec-value" id="spec-cpu">2 Cores</span></div>
+                            <div class="spec-item"><span class="spec-label">System Memory</span><span class="spec-value" id="spec-mem">Loading...</span></div>
+                            <div class="spec-item"><span class="spec-label">Server Uptime</span><span class="spec-value" id="spec-uptime">--</span></div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-head">
+                            <h2 class="card-title">Engine Execution Parameters</h2>
+                        </div>
+                        <div class="spec-list">
+                            <div class="spec-item"><span class="spec-label">Target Horizon (H)</span><span class="spec-value">15 Trading Days (~3 Weeks)</span></div>
+                            <div class="spec-item"><span class="spec-label">Realized Volatility Window</span><span class="spec-value">20 Days Annualized</span></div>
+                            <div class="spec-item"><span class="spec-label">Rebalance Frequency</span><span class="spec-value">Every 5 Trading Days</span></div>
+                            <div class="spec-item"><span class="spec-label">Inertia Exit Percentile</span><span class="spec-value">60th Percentile</span></div>
+                            <div class="spec-item"><span class="spec-label">Earnings Blackout Entry</span><span class="spec-value">&le; 3 Days Prior</span></div>
+                            <div class="spec-item"><span class="spec-label">Earnings De-risk Trim</span><span class="spec-value">50% at 48h Prior</span></div>
+                            <div class="spec-item"><span class="spec-label">Slippage Drag</span><span class="spec-value">8 bps (Large) / 15 bps (Mid)</span></div>
+                            <div class="spec-item"><span class="spec-label">Short Borrow Drag</span><span class="spec-value">100 bps / 252 Daily</span></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Toast Notification Area -->
+        <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <!-- Client Script -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
