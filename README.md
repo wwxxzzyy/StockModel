@@ -91,57 +91,81 @@ Generates current top/bottom decile long and short allocations with inverse-ATR 
 stockmodel rank
 ```
 
+### 5. Launch Web Dashboard & API Server
+Starts the FastAPI interactive quantitative research dashboard:
+```bash
+stockmodel serve --host 0.0.0.0 --port 8000
+```
+
 ---
 
-## 6. Project Architecture
+## 6. Web Dashboard UI
+
+The interactive dashboard is available at `http://<host>:8000/`:
+- **Live Allocations:** Cross-sectional decile long/short allocations with inverse-ATR risk weighting and earnings blackout alerts.
+- **Simulation Tearsheet:** Interactive cumulative NAV equity curve and drawdown profile with full risk metrics (Sharpe, Sortino, Calmar, Turnover, Friction).
+- **Complexity Gating:** Real-time empirical gatekeeper validating GBDT vs Linear baseline out-of-sample IC across walk-forward splits.
+- **Feature Ablation:** Marginal predictive contribution analysis across the 7 core features with automated `KEEP` / `PRUNE` recommendations.
+- **System Telemetry:** Live node resource utilization (CPU, memory, platform, uptime).
+
+---
+
+## 7. Project Architecture
 
 ```
 StockModel/
+├── deploy.sh                          # Automated production deployment script
 ├── pyproject.toml                     # Package specification & entry points
 ├── requirements.txt                   # Production dependencies
 ├── README.md                          # Documentation & usage guide
 ├── stockmodel/
 │   ├── config.py                      # Hyperparameters & execution settings
-│   ├── data/
-│   │   ├── schema.py                  # Point-in-time market data schema
-│   │   ├── loader.py                  # Parquet & CSV data ingestion
-│   │   └── synthetic.py               # Point-in-time synthetic market panel generator
-│   ├── targets/
-│   │   └── volatility_adjusted.py     # Volatility-adjusted target ranking [-1, 1]
-│   ├── features/
-│   │   ├── normalizer.py              # Rolling z-scores & cross-sectional ranks
-│   │   └── pipeline.py                # Polars feature pipeline engine
-│   ├── validation/
-│   │   ├── purged_walk_forward.py     # Purged & embargoed walk-forward splitter
-│   │   └── metrics.py                 # Spearman rank IC, ICIR & acceptance gates
-│   ├── models/
-│   │   ├── base.py                    # Base ranker interface
-│   │   ├── elastic_net.py             # ElasticNet linear baseline model
-│   │   ├── lightgbm_ranker.py         # Regularized LightGBM ranker
-│   │   ├── gating.py                  # Complexity Gating benchmark engine
-│   │   └── ablation.py                # Systematic feature ablation study
-│   ├── execution/
-│   │   ├── portfolio.py               # Decile selection & inverse-ATR weighting
-│   │   ├── blackouts.py               # Earnings blackout risk filters
-│   │   ├── rebalance.py               # Weekly rebalancing with inertia bands
-│   │   └── friction.py                # Slippage & short borrow drag calculation
-│   ├── backtest/
-│   │   ├── engine.py                  # Walk-forward portfolio simulation engine
-│   │   └── reporting.py               # Tear-sheet performance metrics
-│   └── cli.py                         # CLI entry points
-└── tests/                             # Comprehensive unit & integration tests
+│   ├── cli.py                         # CLI entry points (check-gate, run-backtest, rank, serve)
+│   ├── web/                           # Professional Web UI & FastAPI service
+│   │   ├── app.py                     # API backend & JSON endpoints
+│   │   └── static/                    # Responsive SPA dashboard (HTML/CSS/JS)
+│   │       ├── index.html             # Single-page dashboard markup
+│   │       ├── style.css              # Custom dark-theme glassmorphism CSS
+│   │       └── app.js                 # Chart.js analytics & state manager
+│   ├── data/                          # Data ingestion & synthetic panel generation
+│   ├── targets/                       # Volatility-adjusted target ranking [-1, 1]
+│   ├── features/                      # Polars 7-feature pipeline engine
+│   ├── validation/                    # Purged & embargoed walk-forward splitter & IC metrics
+│   ├── models/                        # LightGBM ranker, ElasticNet baseline, gating & ablation
+│   ├── execution/                     # Portfolio allocation, blackouts, rebalance & friction
+│   └── backtest/                      # Simulation engine & performance tear-sheets
+└── tests/                             # Comprehensive test suite (20 unit & integration tests)
     ├── test_targets.py
     ├── test_features.py
     ├── test_validation.py
     ├── test_models.py
     ├── test_execution.py
-    └── test_end_to_end.py
+    ├── test_end_to_end.py
+    └── test_web.py
 ```
 
 ---
 
-## 7. Running Tests
+## 8. Running Tests
 
 ```bash
 pytest -v
 ```
+
+---
+
+## 9. Automated Remote Deployment
+
+Use the built-in deployment script to deploy the codebase and start the systemd service on `modelserver`:
+
+```bash
+# Deploy to default host (modelserver)
+./deploy.sh
+
+# Deploy to custom host / user / port
+./deploy.sh --host 192.168.1.36 --user shawn --port 8000
+
+# Fast deployment without re-running tests
+./deploy.sh --skip-tests
+```
+
