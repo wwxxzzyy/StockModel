@@ -202,6 +202,60 @@ def cmd_fetch_moomoo(args):
     loader.close()
 
 
+def cmd_research(args):
+    """Executes single stock deep quantitative research."""
+    from stockmodel.data.single_stock import research_single_stock
+
+    sym = args.symbol.upper().strip()
+    print("=" * 70)
+    print(f"StockModel: Deep Quantitative Research for {sym}...")
+    print("=" * 70)
+
+    try:
+        res = research_single_stock(
+            symbol=sym,
+            days=args.days,
+            source=args.source,
+            host=args.host,
+        )
+    except Exception as e:
+        print(f"\n[ERROR] Research failed for {sym}: {e}")
+        sys.exit(1)
+
+    q = res["quote"]
+    v = res["verdict"]
+    e = res["earnings"]
+    d = res["derivatives"]
+
+    print(f"\n[ASSET PROFILE] {res['name']} | Sector: {res['sector']} | Date: {res['as_of_date']}")
+    print(f"  Last Close:    ${q['close']:.2f} ({q['change_1d']:+.2f} / {q['change_1d_pct']:+.2f}%)")
+    print(f"  Market Cap:    {q['market_cap_fmt']} | ATR(14): ${q['atr_14']:.2f} ({q['atr_14_pct']}%)")
+    print(f"  52W Range:     ${q['low_52w']:.2f} - ${q['high_52w']:.2f}")
+
+    print(f"\n[MODEL VERDICT & SIGNAL]")
+    print(f"  Signal:        {v['signal_label']} [{v['signal']}]")
+    print(f"  Alpha Score:   {v['pred_score']:+.4f} ({v['percentile']:.1f}th Percentile | Decile {v['decile']})")
+    print(f"  Target Weight: {v['suggested_weight_pct']}% (Inverse-ATR Parity Sizing)")
+    print(f"  Action:        {v['recommendation']}")
+
+    print(f"\n[EARNINGS & EVENT RISK]")
+    print(f"  Status:        {e['status_text']}")
+    print(f"  DTE Countdown: {e['days_to_earnings']} trading days remaining")
+    print(f"  Blackout Risk: {e['blackout_risk']}")
+
+    print(f"\n[DERIVATIVES & MARKET STRUCTURE]")
+    print(f"  Net GEX:       ${d['net_gex']:,.0f} ({d['gex_regime']})")
+    print(f"  Call/Put Vol:  {d['call_volume']:,.0f} Calls / {d['put_volume']:,.0f} Puts (PCR: {d['pcr_ratio']:.2f})")
+    print(f"  Short Int:     {d['short_interest']:,.0f} shares (DTC: {d['days_to_cover']} days)")
+
+    print(f"\n[7 CORE ALPHA FEATURES]")
+    for f in res["features"]:
+        bar = "█" * int(abs(f["score"]) * 10)
+        print(f"  {f['name']:<28} | Score: {f['score']:>+6.3f} [{bar:<10}] | {f['sentiment']:<7} | {f['percentile']:>5.1f}%")
+
+    print(f"\n[QUANT DIAGNOSTIC SUMMARY]\n  {v['summary_narrative']}\n")
+
+
 def cmd_serve(args):
     """Starts the StockModel Web UI and API server."""
     import uvicorn
@@ -216,6 +270,13 @@ def cmd_serve(args):
 def main():
     parser = argparse.ArgumentParser(description="StockModel Quantitative Swing Engine")
     subparsers = parser.add_subparsers(dest="command", help="Sub-commands")
+
+    # research
+    p_res = subparsers.add_parser("research", help="Deep quantitative research on a single stock")
+    p_res.add_argument("symbol", type=str, help="Ticker symbol (e.g. AMZN, NVDA, TSLA, PLTR)")
+    p_res.add_argument("--days", type=int, default=252, help="Days of history (default: 252)")
+    p_res.add_argument("--source", type=str, default="moomoo", choices=["moomoo", "synthetic"], help="Data source")
+    p_res.add_argument("--host", type=str, default="192.168.1.20", help="Moomoo OpenD host")
 
     # check-gate
     p_gate = subparsers.add_parser("check-gate", help="Run walk-forward complexity gating")
@@ -254,7 +315,9 @@ def main():
     p_srv.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
 
     args = parser.parse_args()
-    if args.command == "check-gate":
+    if args.command == "research":
+        cmd_research(args)
+    elif args.command == "check-gate":
         cmd_check_gate(args)
     elif args.command == "run-backtest":
         cmd_run_backtest(args)

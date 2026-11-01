@@ -90,3 +90,33 @@ def test_api_index():
     assert response.status_code == 200
 
 
+def test_api_single_stock_moomoo():
+    response = client.get("/api/stock/AMZN?days=120&source=moomoo")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["symbol"] == "AMZN"
+    assert "quote" in data
+    assert "close" in data["quote"]
+    assert "verdict" in data
+    assert "pred_score" in data["verdict"]
+    assert "percentile" in data["verdict"]
+    assert "earnings" in data
+    assert "derivatives" in data
+    assert "features" in data
+    assert len(data["features"]) == 7
+    assert "history" in data
+    assert len(data["history"]) > 20
+
+
+def test_api_single_stock_synthetic():
+    response = client.get("/api/stock/NVDA?days=100&source=synthetic")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["symbol"] == "NVDA"
+    assert "verdict" in data
+    assert "features" in data
+
+
+
+
+

@@ -11,15 +11,17 @@ Comprehensive operator manual and user guide for the **StockModel Alpha Platform
 3. [Web Dashboard User Interface Walkthrough](#3-web-dashboard-user-interface-walkthrough)
    - [Top Navigation & Telemetry Bar](#top-navigation--telemetry-bar)
    - [Tab 1: Live Decile Rankings & Portfolio Allocation](#tab-1-live-decile-rankings--portfolio-allocation)
-   - [Tab 2: Backtest Simulation & Performance Tearsheet](#tab-2-backtest-simulation--performance-tearsheet)
-   - [Tab 3: Complexity Gating (GBDT vs Linear Baseline)](#tab-3-complexity-gating-gbdt-vs-linear-baseline)
-   - [Tab 4: Feature Ablation Study (Predictive Attribution)](#tab-4-feature-ablation-study-predictive-attribution)
-   - [Tab 5: Architecture & Model Specifications](#tab-5-architecture--model-specifications)
+   - [Tab 2: Single Stock Deep Research Dossier](#tab-2-single-stock-deep-research-dossier)
+   - [Tab 3: Backtest Simulation & Performance Tearsheet](#tab-3-backtest-simulation--performance-tearsheet)
+   - [Tab 4: Complexity Gating (GBDT vs Linear Baseline)](#tab-4-complexity-gating-gbdt-vs-linear-baseline)
+   - [Tab 5: Feature Ablation Study (Predictive Attribution)](#tab-5-feature-ablation-study-predictive-attribution)
+   - [Tab 6: Architecture & Model Specifications](#tab-6-architecture--model-specifications)
 4. [Step-by-Step Daily Operating Workflows](#4-step-by-step-daily-operating-workflows)
-   - [Workflow A: Review Daily Target Allocations](#workflow-a-review-daily-target-allocations)
-   - [Workflow B: Ingest Live Data from Moomoo OpenD](#workflow-b-ingest-live-data-from-moomoo-opend)
-   - [Workflow C: Export Allocations for Execution](#workflow-c-export-allocations-for-execution)
-   - [Workflow D: Run Custom What-If Backtests](#workflow-d-run-custom-what-if-backtests)
+   - [Workflow A: Research Any Single Stock of Interest](#workflow-a-research-any-single-stock-of-interest)
+   - [Workflow B: Review Daily Target Allocations](#workflow-b-review-daily-target-allocations)
+   - [Workflow C: Ingest Live Data from Moomoo OpenD](#workflow-c-ingest-live-data-from-moomoo-opend)
+   - [Workflow D: Export Allocations for Execution](#workflow-d-export-allocations-for-execution)
+   - [Workflow E: Run Custom What-If Backtests](#workflow-e-run-custom-what-if-backtests)
 5. [Understanding Earnings Lifecycle Indicators](#5-understanding-earnings-lifecycle-indicators)
 6. [Command-Line Interface (CLI) Reference](#6-command-line-interface-cli-reference)
 7. [REST API Documentation](#7-rest-api-documentation)
@@ -150,10 +152,60 @@ This is the primary operational screen used for daily portfolio rebalancing and 
     - `<span class="badge-tag blackout">⚠️ Blackout</span>`: Within 3 days of earnings; new entry forbidden.
     - `<span class="badge-tag post-earnings">🎉 Post-Earnings (1d ago)</span>`: Reported within the last 10 days; highlighted for Post-Earnings Announcement Drift (PEAD).
   - **Sector:** GICS sector classification for sector-neutral balance monitoring.
+  - **Interactive Drill-Down:** Click any ticker cell directly in the table to instantly open its complete Deep Research Dossier in Tab 2.
 
 ---
 
-### Tab 2: Backtest Simulation & Performance Tearsheet
+### Tab 2: Single Stock Deep Research Dossier
+
+Enables institutional-grade quantitative research for **any individual equity of interest**, whether it belongs to the core 52-stock panel or is an ad-hoc stock fetched on-demand directly from Moomoo OpenD (`stockserver:11111`).
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  SINGLE STOCK DEEP RESEARCH                                                                      │
+│  [🔍 Enter Ticker (e.g. AMZN, NVDA, PLTR)...   ]  [ ANALYZE STOCK ⚡ ]                           │
+│  QUICK SELECT: [AMZN] [NVDA] [AAPL] [TSLA] [MSFT] [PLTR] [GOOGL] [META] [AMD] [LLY]             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Key Capabilities & Modules:
+
+1. **Flexible Ticker Ingestion (Cached Universe & Ad-Hoc):**
+   - **Pre-Cached Panel:** Instant sub-millisecond evaluation for the 52 liquid benchmark equities.
+   - **Live Ad-Hoc Fetching:** Enter *any* US equity ticker (e.g., `PLTR`, `ARM`, `SMCI`). The backend automatically connects to OpenD on `stockserver:11111`, queries daily OHLCV bars, market capitalization, options GEX, short interest, and corporate earnings calendars on the fly, and computes its cross-sectional percentile against the benchmark panel.
+
+2. **Executive Verdict & Position Sizing:**
+   - **Executive Signal Badge:** Color-coded verdict (`TOP DECILE STRONG LONG`, `DEC 2 OVERPERFORM LONG`, `NEUTRAL / BENCHMARK`, `UNDERPERFORM SHORT`, or `EARNINGS BLACKOUT — ENTRY FORBIDDEN`).
+   - **Cross-Sectional Rank:** Predicted alpha score, global decile (1 to 10), and exact percentile rank.
+   - **Inverse-ATR Target Sizing:** Suggested portfolio allocation percentage scaled by 14-day volatility.
+   - **Natural Language Diagnostic Summary:** Multi-sentence synthesis detailing dominant drivers, volatility conditions, and upcoming catalysts.
+
+3. **Earnings Lifecycle & Event Risk:**
+   - **Point-in-Time Days to Earnings:** Displays trading days to next scheduled announcement.
+   - **Post-Earnings Announcement Drift (PEAD):** Highlights if the asset recently announced earnings, displaying days elapsed since reporting and historical drift momentum.
+   - **Blackout Safeguard:** Highlights if an asset is within the $\le 3$ trading days blackout window where new entry is forbidden to protect against binary gap risk.
+
+4. **Derivatives Positioning & Market Structure:**
+   - **Net Gamma Exposure (Net GEX):** ATM Call GEX vs Put GEX. Signals whether dealers are dampening volatility (`POSITIVE_GEX`) or accelerating momentum (`NEGATIVE_GEX`).
+   - **Put/Call Ratio (PCR):** Real-time options volume ratio and momentum shift.
+   - **Short Squeeze Risk:** Official short interest shares, 20-day Average Daily Volume (ADV20), and Days to Cover.
+
+5. **7-Feature Deep Attribution:**
+   - Visual gauge meters and numerical percentiles for each of the 7 core alpha features:
+     1. Short Squeeze Pressure
+     2. Net Gamma Exposure (GEX)
+     3. Put/Call Ratio Momentum
+     4. Sector-Relative Momentum (20d)
+     5. VWAP Divergence
+     6. VIX Term Structure Slope
+     7. SUE Score (PEAD Drift)
+
+6. **Interactive Price, VWAP & SMA50 Chart:**
+   - Interactive 90-day time-series showing spot daily close prices, rolling 20-day institutional VWAP, and 50-day Simple Moving Average.
+
+---
+
+### Tab 3: Backtest Simulation & Performance Tearsheet
 
 Simulates cross-sectional walk-forward execution under strict execution constraints:
 
@@ -171,7 +223,7 @@ Simulates cross-sectional walk-forward execution under strict execution constrai
 
 ---
 
-### Tab 3: Complexity Gating (GBDT vs Linear Baseline)
+### Tab 4: Complexity Gating (GBDT vs Linear Baseline)
 
 Guards against overfitting and unnecessary model complexity by enforcing an automated empirical gate:
 
@@ -182,7 +234,7 @@ Guards against overfitting and unnecessary model complexity by enforcing an auto
 
 ---
 
-### Tab 4: Feature Ablation Study (Predictive Attribution)
+### Tab 5: Feature Ablation Study (Predictive Attribution)
 
 Performs leave-one-feature-out sensitivity analysis across the 7 core alpha features:
 
@@ -193,7 +245,7 @@ Performs leave-one-feature-out sensitivity analysis across the 7 core alpha feat
 
 ---
 
-### Tab 5: Architecture & Model Specifications
+### Tab 6: Architecture & Model Specifications
 
 A live interactive technical reference detailing:
 - Mathematical formulas for all 7 features.
@@ -205,7 +257,29 @@ A live interactive technical reference detailing:
 
 ## 4. Step-by-Step Daily Operating Workflows
 
-### Workflow A: Review Daily Target Allocations
+### Workflow A: Research Any Single Stock of Interest
+**Frequency:** On-demand whenever evaluating a specific trading or investment idea.
+
+1. In the Web Dashboard top navigation, click **"Single Stock Research"**.
+2. **Select your ticker:**
+   - Type any ticker symbol (e.g. `AMZN`, `NVDA`, `PLTR`, `TSLA`, `ARM`, `SMCI`) into the search bar and press **Enter** or click **"Analyze Stock ⚡"**.
+   - Or click any of the **Quick Select Chips** (`[AMZN]`, `[NVDA]`, `[AAPL]`, `[TSLA]`, `[MSFT]`, `[PLTR]`, `[GOOGL]`, `[META]`, `[AMD]`, `[LLY]`).
+   - Or, from the **Decile Rankings** table on Tab 1, simply **click any ticker symbol** in the list to drill down immediately.
+3. **Inspect the Executive Signal Badge:**
+   - Review whether the stock is ranked in the top decile (`TOP DECILE STRONG LONG`), bottom decile (`UNDERPERFORM SHORT`), or `NEUTRAL`.
+   - Check the **Inverse-ATR Target Weight** to see what position size is mathematically justified by its recent 14-day volatility.
+4. **Evaluate the Earnings Risk & Lifecycle:**
+   - Check **Days to Earnings**. If marked `⚠️ BLACKOUT TRIGGERED`, entry is forbidden due to imminent binary earnings gap risk.
+   - If marked `🎉 Post-Earnings`, the stock is currently in its post-earnings announcement drift (PEAD) cycle; check how many trading days have passed since reporting.
+5. **Analyze the Derivatives & Market Structure Profile:**
+   - Check **Net Gamma Exposure (Net GEX)**: Is it positive (dealers long gamma, stabilizing price) or negative (dealers short gamma, amplifying momentum)?
+   - Check **Days to Cover** and **Short Interest**: Does high short interest combined with positive momentum indicate short squeeze potential?
+6. **Examine the 7-Feature Diagnostics:**
+   - Look at the individual feature meters to understand *why* the stock is ranked high or low (e.g., strong VWAP divergence vs high put/call ratio).
+
+---
+
+### Workflow B: Review Daily Target Allocations
 **Frequency:** Daily at market close or pre-market opening.
 
 1. Navigate to `http://modelserver:8000/`.
@@ -220,7 +294,7 @@ A live interactive technical reference detailing:
 
 ---
 
-### Workflow B: Ingest Live Data from Moomoo OpenD
+### Workflow C: Ingest Live Data from Moomoo OpenD
 **Frequency:** Weekly on Friday evening or daily after market close (16:30 ET).
 
 1. In the dashboard header, click **"Sync Live Data"**.
@@ -241,7 +315,7 @@ A live interactive technical reference detailing:
 
 ---
 
-### Workflow C: Export Allocations for Execution
+### Workflow D: Export Allocations for Execution
 **Frequency:** When rebalancing orders need to be sent to your broker or Execution Management System (EMS).
 
 1. On the **Decile Rankings** tab, click **"Export Allocation CSV"**.
@@ -258,7 +332,7 @@ A live interactive technical reference detailing:
 
 ---
 
-### Workflow D: Run Custom What-If Backtests
+### Workflow E: Run Custom What-If Backtests
 **Frequency:** During strategy optimization or research sessions.
 
 1. Navigate to the **Backtest Simulation** tab.
@@ -343,9 +417,26 @@ Outputs complete statistical tearsheet to stdout.
 ```bash
 stockmodel feature-ablation --days 300
 ```
-Outputs leave-one-feature-out attribution matrix and pruning suggestions.
+### 6. Single Stock Deep Quantitative Research
+Run a full single-stock alpha research dossier for any ticker from the command line:
+```bash
+# Research an individual stock using live OpenD data
+stockmodel research AMZN --source moomoo
 
-### 6. Launch Web Server
+# Research an ad-hoc stock outside the default universe (fetched on the fly)
+stockmodel research PLTR --source moomoo
+
+# Research using synthetic simulation
+stockmodel research NVDA --source synthetic
+```
+*Options:*
+- `SYMBOL`: Ticker symbol to analyze (e.g. `AMZN`, `NVDA`, `PLTR`, `TSLA`, `AAPL`).
+- `--source {moomoo,synthetic}`: Market data provider (default: `moomoo`).
+- `--days INT`: Historical lookback window in calendar days (default: `252`).
+- `--host HOST`: Moomoo OpenD gateway host IP (default: `192.168.1.20`).
+- `--port PORT`: Moomoo OpenD port (default: `11111`).
+
+### 7. Launch Web Server
 ```bash
 stockmodel serve --host 0.0.0.0 --port 8000
 ```
@@ -409,6 +500,65 @@ curl -s "http://modelserver:8000/api/rank?days=252&source=moomoo"
       "earnings_status_text": "Passed 2026-10-29 (1d ago)",
       "in_blackout": false
     }
+  ]
+}
+```
+
+### `GET /api/stock/{symbol}?days=252&source=moomoo`
+Returns an in-depth quantitative alpha dossier for any individual ticker (cached universe or live ad-hoc):
+```bash
+curl -s "http://modelserver:8000/api/stock/AMZN?days=252&source=moomoo"
+```
+*Sample JSON Response Structure:*
+```json
+{
+  "symbol": "AMZN",
+  "name": "AMZN (Consumer Discretionary)",
+  "sector": "Consumer Discretionary",
+  "as_of_date": "2026-10-30",
+  "source": "moomoo_cached",
+  "quote": {
+    "close": 240.35,
+    "change_1d": 5.20,
+    "change_1d_pct": 2.21,
+    "atr_14": 7.71,
+    "market_cap_fmt": "$2508.3B"
+  },
+  "verdict": {
+    "pred_score": 0.0329,
+    "percentile": 73.1,
+    "decile": 8,
+    "signal": "LONG",
+    "signal_label": "TOP DECILE STRONG LONG",
+    "recommendation": "STRONG BUY / OVERWEIGHT",
+    "suggested_weight_pct": 9.77,
+    "summary_narrative": "AMZN ranks in the 73.1th percentile (Decile 8) with a predicted 2-4W alpha score of +0.0329. The asset announced earnings 1 day(s) ago on 2026-10-29. It is currently in a Post-Earnings Announcement Drift (PEAD) cycle with ~64 trading days remaining until next reporting."
+  },
+  "earnings": {
+    "days_to_earnings": 64,
+    "days_since_earnings": 1,
+    "last_earnings_date": "2026-10-29",
+    "next_earnings_date": "2027-01-28",
+    "is_post_earnings": true,
+    "in_blackout": false,
+    "blackout_risk": "POST-EARNINGS: Passed on 2026-10-29 (1d ago) ~64d to next"
+  },
+  "derivatives": {
+    "net_gex": 69280.0,
+    "pcr_ratio": 0.72,
+    "days_to_cover": 2.8,
+    "gex_regime": "POSITIVE_GEX (Dealer Stability)"
+  },
+  "features": [
+    {
+      "name": "Short Squeeze Pressure",
+      "score": 0.38,
+      "sentiment": "Bullish",
+      "percentile": 67.3
+    }
+  ],
+  "history": [
+    { "date": "2026-10-30", "close": 240.35, "vwap": 236.42, "volume": 42100000 }
   ]
 }
 ```

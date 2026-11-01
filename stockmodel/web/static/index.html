@@ -97,7 +97,11 @@
         <main class="main-content">
             <!-- Navigation Tabs -->
             <nav class="sub-nav" role="tablist">
-                <button class="nav-tab active" id="tab-rank" data-target="panel-rank" role="tab">
+                <button class="nav-tab active" id="tab-single-stock" data-target="panel-single-stock" role="tab">
+                    <span class="tab-icon">🔍</span>
+                    <span>Single Stock Research</span>
+                </button>
+                <button class="nav-tab" id="tab-rank" data-target="panel-rank" role="tab">
                     <span class="tab-icon">📊</span>
                     <span>Live Allocations</span>
                 </button>
@@ -119,8 +123,61 @@
                 </button>
             </nav>
 
+            <!-- TAB: SINGLE STOCK RESEARCH -->
+            <section id="panel-single-stock" class="tab-panel active" role="tabpanel">
+                <div class="panel-header">
+                    <div>
+                        <h1 class="panel-title">Single Stock Quantitative Research Dossier</h1>
+                        <p class="panel-desc">Deep-dive predictive alpha signals, earnings lifecycle, options positioning, and 7-feature breakdown for any stock.</p>
+                    </div>
+                    <div class="panel-actions">
+                        <span class="as-of-badge" id="stock-as-of">As of: Loading...</span>
+                    </div>
+                </div>
+
+                <!-- Ticker Search Control -->
+                <div class="stock-search-card card">
+                    <div class="stock-search-row">
+                        <div class="search-input-box">
+                            <span class="search-prefix">$</span>
+                            <input type="text" id="single-stock-input" class="stock-input" placeholder="Enter any ticker (e.g. AMZN, NVDA, TSLA, PLTR, AAPL)..." value="AMZN" onkeydown="if(event.key==='Enter')app.analyzeCustomStock()" />
+                        </div>
+                        <button class="btn btn-primary" id="btn-analyze-stock" onclick="app.analyzeCustomStock()">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                            <span id="analyze-btn-text">Analyze Stock</span>
+                        </button>
+                    </div>
+                    <div class="quick-chips-row">
+                        <span class="chips-label">Quick Select:</span>
+                        <div class="chips-list">
+                            <button class="chip-pill active" onclick="app.setQuickStock('AMZN')">AMZN</button>
+                            <button class="chip-pill" onclick="app.setQuickStock('NVDA')">NVDA</button>
+                            <button class="chip-pill" onclick="app.setQuickStock('AAPL')">AAPL</button>
+                            <button class="chip-pill" onclick="app.setQuickStock('TSLA')">TSLA</button>
+                            <button class="chip-pill" onclick="app.setQuickStock('MSFT')">MSFT</button>
+                            <button class="chip-pill" onclick="app.setQuickStock('PLTR')">PLTR</button>
+                            <button class="chip-pill" onclick="app.setQuickStock('GOOGL')">GOOGL</button>
+                            <button class="chip-pill" onclick="app.setQuickStock('META')">META</button>
+                            <button class="chip-pill" onclick="app.setQuickStock('AMD')">AMD</button>
+                            <button class="chip-pill" onclick="app.setQuickStock('LLY')">LLY</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stock Dossier Content (Rendered by JS) -->
+                <div id="stock-dossier" class="stock-dossier-wrapper">
+                    <div class="loading-state-card card">
+                        <div class="spinner"></div>
+                        <p>Generating Quantitative Research Dossier for AMZN...</p>
+                    </div>
+                </div>
+            </section>
+
             <!-- TAB 1: LIVE ALLOCATIONS -->
-            <section id="panel-rank" class="tab-panel active" role="tabpanel">
+            <section id="panel-rank" class="tab-panel" role="tabpanel">
                 <div class="panel-header">
                     <div>
                         <h1 class="panel-title">Cross-Sectional Decile Allocations</h1>

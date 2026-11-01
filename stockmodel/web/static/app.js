@@ -10,6 +10,9 @@ class StockModelApp {
         this.currentBacktest = null;
         this.charts = {};
         this.activeFilter = 'ALL';
+        this.currentStockSymbol = 'AMZN';
+        this.singleStockLoaded = false;
+        this.chartSingleStock = null;
         this.initEventListeners();
     }
 
@@ -45,7 +48,11 @@ class StockModelApp {
         if (targetPanel) targetPanel.classList.add('active');
 
         // Lazy load tab data if not loaded yet
-        if (panelId === 'panel-backtest' && !this.currentBacktest) {
+        if (panelId === 'panel-single-stock' && !this.singleStockLoaded) {
+            this.loadSingleStock(this.currentStockSymbol || 'AMZN');
+        } else if (panelId === 'panel-rank' && (!this.currentAllocations || !this.currentAllocations.length)) {
+            this.loadRank();
+        } else if (panelId === 'panel-backtest' && !this.currentBacktest) {
             this.loadBacktest();
         } else if (panelId === 'panel-gating' && !this.gatingLoaded) {
             this.loadGating();
@@ -81,6 +88,7 @@ class StockModelApp {
         try {
             await this.loadTelemetry();
             await this.checkMoomooStatus();
+            await this.loadSingleStock(this.currentStockSymbol || 'AMZN');
             await this.loadRank();
         } catch (err) {
             console.error('Initialization error:', err);
@@ -362,7 +370,7 @@ class StockModelApp {
 
             return `
                 <tr>
-                    <td class="ticker-cell">${a.symbol}</td>
+                    <td class="ticker-cell clickable-ticker" onclick="app.inspectStock('${a.symbol}')" title="Deep Research ${a.symbol}">${a.symbol}<span class="inspect-icon">🔍</span></td>
                     <td><span class="weight-pill ${weightClass}">${a.type}</span></td>
                     <td style="font-family: var(--font-mono); font-weight: 600;">${a.weight_pct > 0 ? '+' : ''}${a.weight_pct}%</td>
                     <td style="font-family: var(--font-mono);">${a.pred_score}</td>
@@ -761,6 +769,347 @@ class StockModelApp {
             const hrs = Math.floor(mins / 60);
             specUptime.textContent = hrs > 0 ? `${hrs}h ${mins % 60}m` : `${mins}m ${data.uptime_seconds % 60}s`;
         }
+    }
+
+    // =========================================================================
+    // 0. Single Stock Deep Research Tab
+    // =========================================================================
+
+    setQuickStock(symbol) {
+        document.querySelectorAll('.chip-pill').forEach(btn => {
+            btn.classList.toggle('active', btn.textContent.trim() === symbol);
+        });
+        const input = document.getElementById('single-stock-input');
+        if (input) input.value = symbol;
+        this.loadSingleStock(symbol);
+    }
+
+    analyzeCustomStock() {
+        const input = document.getElementById('single-stock-input');
+        const symbol = (input?.value || 'AMZN').trim().toUpperCase();
+        if (!symbol) return;
+        document.querySelectorAll('.chip-pill').forEach(btn => {
+            btn.classList.toggle('active', btn.textContent.trim() === symbol);
+        });
+        this.loadSingleStock(symbol);
+    }
+
+    inspectStock(symbol) {
+        this.switchTab('panel-single-stock');
+        this.setQuickStock(symbol);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async loadSingleStock(symbol = 'AMZN') {
+        this.currentStockSymbol = symbol;
+        const dossierEl = document.getElementById('stock-dossier');
+        const btnText = document.getElementById('analyze-btn-text');
+        const btn = document.getElementById('btn-analyze-stock');
+        if (btn) btn.classList.add('loading');
+        if (btnText) btnText.textContent = `Analyzing ${symbol}...`;
+
+        if (dossierEl) {
+            dossierEl.innerHTML = `
+                <div class="loading-state-card card">
+                    <div class="spinner"></div>
+                    <p>Generating Institutional Alpha Dossier for <strong>${symbol}</strong>...</p>
+                </div>
+            `;
+        }
+
+        try {
+            const days = parseInt(document.getElementById('global-days-select')?.value || 252);
+            const source = document.getElementById('global-source-select')?.value || 'moomoo';
+            const res = await fetch(`${API_BASE}/api/stock/${encodeURIComponent(symbol)}?days=${days}&source=${source}`);
+            
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `Stock research failed (${res.status})`);
+            }
+            const data = await res.json();
+            this.singleStockLoaded = true;
+            this.renderStockDossier(data);
+        } catch (err) {
+            console.error('Single stock error:', err);
+            this.showToast(`Error analyzing ${symbol}: ${err.message}`);
+            if (dossierEl) {
+                dossierEl.innerHTML = `
+                    <div class="error-card card">
+                        <div class="error-icon" style="font-size: 2rem; margin-bottom: 8px;">⚠️</div>
+                        <h3 style="color: var(--rose-500); margin-bottom: 6px;">Could not analyze ${symbol}</h3>
+                        <p style="color: var(--text-secondary); margin-bottom: 8px;">${err.message}</p>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">Verify ticker spelling or confirm Moomoo OpenD is connected to stockserver.</span>
+                    </div>
+                `;
+            }
+        } finally {
+            if (btn) btn.classList.remove('loading');
+            if (btnText) btnText.textContent = 'Analyze Stock';
+        }
+    }
+
+    renderStockDossier(data) {
+        const dossierEl = document.getElementById('stock-dossier');
+        if (!dossierEl) return;
+
+        const q = data.quote;
+        const v = data.verdict;
+        const e = data.earnings;
+        const d = data.derivatives;
+
+        // Update as-of badge
+        const asOfEl = document.getElementById('stock-as-of');
+        if (asOfEl) asOfEl.textContent = `As of: ${data.as_of_date} (${data.source.toUpperCase()})`;
+
+        // Color coding for signals
+        let signalClass = 'signal-neutral';
+        if (v.signal.includes('LONG')) signalClass = 'signal-long';
+        else if (v.signal.includes('SHORT')) signalClass = 'signal-short';
+        else if (v.signal.includes('BLACKOUT')) signalClass = 'signal-blackout';
+
+        const changeClass = q.change_1d >= 0 ? 'positive' : 'negative';
+        const changeSign = q.change_1d >= 0 ? '+' : '';
+
+        dossierEl.innerHTML = `
+            <!-- Top Asset Profile & Big Signal Card -->
+            <div class="dossier-header-card card">
+                <div class="dossier-identity">
+                    <div class="symbol-badge-row">
+                        <h2 class="dossier-symbol">${data.symbol}</h2>
+                        <span class="dossier-sector-pill">${data.sector}</span>
+                        <span class="dossier-source-pill">${data.source === 'moomoo' ? '🟢 Moomoo OpenD' : '🟡 Simulation'}</span>
+                    </div>
+                    <div class="dossier-price-row">
+                        <span class="dossier-price">$${q.close.toFixed(2)}</span>
+                        <span class="dossier-change ${changeClass}">${changeSign}$${q.change_1d.toFixed(2)} (${changeSign}${q.change_1d_pct.toFixed(2)}%)</span>
+                    </div>
+                    <div class="dossier-stats-chips">
+                        <span><strong>Market Cap:</strong> ${q.market_cap_fmt}</span>
+                        <span><strong>52W Range:</strong> $${q.low_52w.toFixed(2)} - $${q.high_52w.toFixed(2)}</span>
+                        <span><strong>20d VWAP:</strong> $${q.vwap_20 ? q.vwap_20.toFixed(2) : '--'}</span>
+                        <span><strong>50d SMA:</strong> $${q.sma_50 ? q.sma_50.toFixed(2) : '--'}</span>
+                    </div>
+                </div>
+
+                <div class="dossier-verdict-box ${signalClass}">
+                    <span class="verdict-pretitle">QUANTITATIVE MODEL SIGNAL</span>
+                    <h3 class="verdict-title">${v.signal_label}</h3>
+                    <div class="verdict-meta">
+                        <span class="verdict-score">Score: <strong>${v.pred_score > 0 ? '+' : ''}${v.pred_score}</strong></span>
+                        <span class="verdict-percentile">Rank: <strong>${v.percentile}th %ile (Decile ${v.decile})</strong></span>
+                    </div>
+                    <div class="verdict-sizing">
+                        <span>Inverse-ATR Sizing: <strong>${v.suggested_weight_pct}%</strong></span>
+                        <span>ATR(14): <strong>$${q.atr_14.toFixed(2)} (${q.atr_14_pct}%)</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4 Quick Telemetry Cards -->
+            <div class="metric-grid-4">
+                <div class="metric-card">
+                    <span class="card-label">Predicted 2-4W Alpha</span>
+                    <div class="card-value-group">
+                        <span class="card-value ${v.pred_score >= 0 ? 'highlight-cyan' : 'highlight-rose'}">${v.pred_score > 0 ? '+' : ''}${v.pred_score}</span>
+                    </div>
+                    <span class="card-hint">${v.percentile}th percentile relative to peers</span>
+                </div>
+
+                <div class="metric-card">
+                    <span class="card-label">Earnings Lifecycle</span>
+                    <div class="card-value-group">
+                        <span class="card-value ${e.in_blackout ? 'highlight-amber' : (e.is_post_earnings ? 'highlight-purple' : 'highlight-cyan')}">${e.days_to_earnings}d</span>
+                    </div>
+                    <span class="card-hint">${e.status_text}</span>
+                </div>
+
+                <div class="metric-card">
+                    <span class="card-label">Net Gamma Exposure</span>
+                    <div class="card-value-group">
+                        <span class="card-value ${d.net_gex >= 0 ? 'highlight-cyan' : 'highlight-rose'}">$${(d.net_gex / 1000).toFixed(0)}k</span>
+                    </div>
+                    <span class="card-hint">${d.gex_regime}</span>
+                </div>
+
+                <div class="metric-card">
+                    <span class="card-label">Short Squeeze Risk</span>
+                    <div class="card-value-group">
+                        <span class="card-value highlight-cyan">${d.days_to_cover}d</span>
+                    </div>
+                    <span class="card-hint">Short Int: ${(d.short_interest / 1e6).toFixed(1)}M shares</span>
+                </div>
+            </div>
+
+            <!-- Chart & Technical Diagnostics Grid -->
+            <div class="chart-grid-two">
+                <div class="card chart-card">
+                    <div class="chart-header">
+                        <div>
+                            <h3 class="chart-title">Price Action & Institutional VWAP (90 Trading Days)</h3>
+                            <p class="chart-subtitle">Close price with 20-day rolling institutional VWAP and 50-day trend SMA.</p>
+                        </div>
+                    </div>
+                    <div class="chart-container" style="height: 320px;">
+                        <canvas id="chart-single-stock"></canvas>
+                    </div>
+                </div>
+
+                <div class="card diagnosis-card">
+                    <h3 class="chart-title">Quantitative Diagnostic Rationale</h3>
+                    <div class="narrative-content">
+                        <p class="narrative-text">${v.summary_narrative}</p>
+                    </div>
+
+                    <div class="event-risk-block">
+                        <h4 class="event-risk-title">Event & Earnings Risk Review</h4>
+                        <div class="event-risk-item">
+                            <span class="risk-label">Next Scheduled Print:</span>
+                            <span class="risk-val">${e.next_earnings_date || 'Unscheduled (~91d Cycle)'} (${e.days_to_earnings} trading days)</span>
+                        </div>
+                        <div class="event-risk-item">
+                            <span class="risk-label">Last Historical Print:</span>
+                            <span class="risk-val">${e.last_earnings_date ? `${e.last_earnings_date} (${e.days_since_earnings}d ago)` : 'None in window'}</span>
+                        </div>
+                        <div class="event-risk-item">
+                            <span class="risk-label">Blackout Policy Status:</span>
+                            <span class="risk-badge ${e.in_blackout ? 'badge-blackout' : (e.is_post_earnings ? 'badge-post' : 'badge-safe')}">
+                                ${e.in_blackout ? '⚠️ ENTRY BLOCKED (≤ 3d to print)' : (e.is_post_earnings ? '🎉 POST-EARNINGS (PEAD Active)' : '✅ SAFE TO HOLD')}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="derivatives-block">
+                        <h4 class="event-risk-title">Options Positioning Profile</h4>
+                        <div class="event-risk-item">
+                            <span class="risk-label">Call / Put Volume Ratio (PCR):</span>
+                            <span class="risk-val">${d.pcr_ratio} (${(d.call_volume / 1000).toFixed(0)}k calls / ${(d.put_volume / 1000).toFixed(0)}k puts)</span>
+                        </div>
+                        <div class="event-risk-item">
+                            <span class="risk-label">ATM Call Gamma Exposure:</span>
+                            <span class="risk-val">$${(d.call_gex / 1000).toFixed(0)}k</span>
+                        </div>
+                        <div class="event-risk-item">
+                            <span class="risk-label">ATM Put Gamma Exposure:</span>
+                            <span class="risk-val">$${(d.put_gex / 1000).toFixed(0)}k</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 7 Core Alpha Features Deep-Dive Cards -->
+            <div class="features-dossier-section">
+                <h3 class="section-title">The 7 Core Alpha Features Breakdown</h3>
+                <div class="feature-cards-grid">
+                    ${data.features.map(f => {
+                        const sentClass = f.sentiment === 'BULLISH' ? 'sentiment-bullish' : (f.sentiment === 'BEARISH' ? 'sentiment-bearish' : 'sentiment-neutral');
+                        const barWidth = Math.min(100, Math.max(5, (f.score + 1.0) * 50));
+                        return `
+                            <div class="feature-detail-card card">
+                                <div class="f-card-header">
+                                    <span class="f-category">${f.category}</span>
+                                    <span class="f-sentiment ${sentClass}">${f.sentiment}</span>
+                                </div>
+                                <h4 class="f-name">${f.name}</h4>
+                                <div class="f-score-row">
+                                    <span class="f-score">${f.score > 0 ? '+' : ''}${f.score}</span>
+                                    <span class="f-percentile">${f.percentile}th %ile</span>
+                                </div>
+                                <div class="f-meter-bg">
+                                    <div class="f-meter-fill ${sentClass}" style="width: ${barWidth}%;"></div>
+                                </div>
+                                <p class="f-explanation">${f.explanation}</p>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+
+        // Render the interactive price & VWAP chart
+        this.renderSingleStockChart(data.history);
+    }
+
+    renderSingleStockChart(history) {
+        const canvas = document.getElementById('chart-single-stock');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (this.chartSingleStock) {
+            this.chartSingleStock.destroy();
+        }
+
+        const labels = history.map(h => h.date);
+        const closes = history.map(h => h.close);
+        const vwaps = history.map(h => h.vwap);
+        const sma50s = history.map(h => h.sma_50);
+
+        this.chartSingleStock = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Close Price ($)',
+                        data: closes,
+                        borderColor: '#06b6d4',
+                        backgroundColor: 'rgba(6, 182, 212, 0.08)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        fill: true,
+                        tension: 0.1,
+                    },
+                    {
+                        label: '20-Day Rolling VWAP',
+                        data: vwaps,
+                        borderColor: '#f59e0b',
+                        borderWidth: 1.8,
+                        borderDash: [5, 4],
+                        pointRadius: 0,
+                        fill: false,
+                    },
+                    {
+                        label: '50-Day SMA Trend',
+                        data: sma50s,
+                        borderColor: '#c084fc',
+                        borderWidth: 1.5,
+                        borderDash: [3, 3],
+                        pointRadius: 0,
+                        fill: false,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 11 }, boxWidth: 12 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => ` ${context.dataset.label}: $${context.parsed.y.toFixed(2)}`
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#94a3b8', maxTicksLimit: 8, font: { family: 'JetBrains Mono', size: 10 } }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: {
+                            color: '#94a3b8',
+                            font: { family: 'JetBrains Mono', size: 10 },
+                            callback: (v) => `$${v.toFixed(0)}`
+                        }
+                    }
+                }
+            }
+        });
     }
 }
 

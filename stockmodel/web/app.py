@@ -243,6 +243,27 @@ async def get_rank(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/stock/{symbol}")
+async def get_single_stock(
+    symbol: str,
+    days: int = Query(252, ge=60, le=1000),
+    source: str = Query("moomoo", pattern="^(synthetic|moomoo)$"),
+):
+    """Deep-dive quantitative single-stock research dossier."""
+    try:
+        from stockmodel.data.single_stock import research_single_stock
+        return research_single_stock(
+            symbol=symbol,
+            days=days,
+            source=source,
+            host=os.environ.get("MOOMOO_HOST", "192.168.1.20"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/backtest")
 async def get_backtest(
     days: int = Query(300, ge=100, le=1000),
